@@ -24,6 +24,8 @@ from scanner.models import (
     ScanSummary,
     Severity,
     SkillFile,
+    StageTIResult,
+    TIEntityResult,
     Verdict,
 )
 
@@ -103,6 +105,23 @@ _LLM_CATEGORY_ZH: dict[str, tuple[str, str]] = {
     "unicode_steganography":  ("LLM 检测: Unicode 隐写",   "LLM 语义分析发现 Unicode 隐写攻击，利用不可见字符或双向控制符隐藏恶意指令。"),
     "transitive_trust_abuse": ("LLM 检测: 传递信任滥用",   "LLM 语义分析发现传递信任滥用模式，借助可信组件执行未经授权的恶意操作。"),
 }
+
+# Chinese title/description templates for TI findings, keyed by risk level.
+_TI_RISK_ZH: dict[str, tuple[str, str]] = {
+    "black": (
+        "威胁情报: 恶意指标",
+        "威胁情报查询发现已知恶意 IOC（黑名单命中），该实体已被标记为恶意。",
+    ),
+    "suspicious": (
+        "威胁情报: 可疑指标",
+        "威胁情报查询发现可疑 IOC，该实体存在恶意行为嫌疑。",
+    ),
+}
+
+_TI_REMEDIATION = (
+    "拒绝安装此 Skill。该 Skill 包含已知恶意或可疑的 IP/域名/URL，"
+    "威胁情报系统已将其标记为恶意指标。若已安装，请立即审查网络访问日志并隔离相关资源。"
+)
 
 
 # Chinese names for rule_name values (Stage 1 findings).
@@ -430,11 +449,17 @@ class Reporter:
         for r in results:
             has_stage1_findings = bool(
                 r.stage1 and r.stage1.matched_rules)
+            has_ti_findings = bool(
+                r.stage_ti and any(
+                    e.risk in ("black", "suspicious") for e in r.stage_ti.entities))
             has_stage2_findings = bool(
                 r.stage2 and r.stage2.threats)
             has_non_clean_verdict = r.final_verdict in (
                 Verdict.MALICIOUS, Verdict.SUSPICIOUS)
-            has_findings = has_non_clean_verdict or has_stage1_findings or has_stage2_findings
+            has_findings = (
+                has_non_clean_verdict or has_stage1_findings
+                or has_ti_findings or has_stage2_findings
+            )
 
             if has_findings:
                 report = self._build_skill_report(r, scan_id)
@@ -574,6 +599,87 @@ class Reporter:
                     "references": [],
                 })
 
+        # --- Threat Intelligence findings (Stage TI) ---
+        if r.stage_ti and r.stage_ti.entities:
+            for ent in r.stage_ti.entities:
+                if ent.risk not in ("black", "suspicious"):
+                    continue
+                severity = "CRITICAL" if ent.risk == "black" else "HIGH"
+                rule_id = f"TI_{ent.kind.upper()}_{ent.risk.upper()}"
+                category = "data_exfiltration"
+                ti_file_path = ent.source_file or entry_file_path
+
+                # Resolve line number and snippet from position offset
+                ti_line_no = 0
+                ti_snippet = ent.entity
+                ti_ctx_before = ""
+                ti_ctx_after = ""
+                if ent.position != (0, 0):
+                    # Pick the correct content for offset resolution
+                    if ent.source_file and ent.source_file in seg_content_map:
+                        ti_src_content = seg_content_map[ent.source_file]
+                    else:
+                        ti_src_content = content
+                    ti_line_no = _offset_to_line(ti_src_content, ent.position[0])
+                    ti_snippet = _get_snippet(
+                        ti_src_content, ent.position[0], ent.position[1])
+                    ti_ctx_before, ti_ctx_after = _get_context(
+                        ti_src_content, ent.position[0], ent.position[1])
+
+                fid = _make_finding_id(rule_id, ti_file_path, ti_line_no)
+                zh_title, zh_desc = _TI_RISK_ZH[ent.risk]
+
+                tag_summary = ""
+                if ent.tags:
+                    families = []
+                    for tag_group in ent.tags:
+                        for fam in tag_group.get("malicious_family", []):
+                            families.append(fam.get("name", ""))
+                    if families:
+                        tag_summary = f"关联恶意家族: {', '.join(f for f in families if f)}"
+
+                findings.append({
+                    "id": fid,
+                    "rule_id": rule_id,
+                    "analyzer_id": "threat_intel",
+                    "category": category,
+                    "severity": severity,
+                    "title": f"{zh_title}: {ent.entity}",
+                    "description": (
+                        f"{zh_desc}\n\n"
+                        f"实体: {ent.entity} (类型: {ent.kind}, 风险等级: {ent.risk})\n"
+                        f"来源文件: {ti_file_path}"
+                        f"{f' 第 {ti_line_no} 行' if ti_line_no else ''}\n"
+                        f"{tag_summary}"
+                    ),
+                    "title_en": f"Threat Intel: {ent.risk} indicator — {ent.entity}",
+                    "description_en": (
+                        f"TI lookup flagged {ent.entity} ({ent.kind}) as {ent.risk}."
+                    ),
+                    "location": {
+                        "file_path": ti_file_path,
+                        "line_number": ti_line_no,
+                        "line_end": None,
+                        "column_start": None,
+                        "snippet": ti_snippet[:500],
+                    },
+                    "evidence": {
+                        "matched_pattern": "threat_intel_lookup",
+                        "matched_content": ent.entity,
+                        "context_before": ti_ctx_before[:500],
+                        "context_after": ti_ctx_after[:500],
+                    },
+                    "threat_intel": {
+                        "entity": ent.entity,
+                        "kind": ent.kind,
+                        "risk": ent.risk,
+                        "tags": ent.tags,
+                    },
+                    "remediation": _TI_REMEDIATION,
+                    "metadata": {"ti_generated": True},
+                    "references": [],
+                })
+
         # Sort findings by severity (CRITICAL first)
         findings.sort(
             key=lambda f: -_SEVERITY_ORDER.get(
@@ -620,6 +726,22 @@ class Reporter:
                 },
                 "error": None,
             }
+        if r.stage_ti:
+            ti_findings = [
+                f for f in findings if f["analyzer_id"] == "threat_intel"]
+            analyzer_results["threat_intel"] = {
+                "analyzer_id": "threat_intel",
+                "status": r.stage_ti.status.value,
+                "duration_ms": r.stage_ti.duration_ms,
+                "findings": ti_findings,
+                "verdict": r.stage_ti.verdict.value.upper(),
+                "verdict_confidence": 0.0,
+                "extra": {
+                    "entities_extracted": len(r.stage_ti.entities),
+                    "entities_flagged": len(ti_findings),
+                },
+                "error": r.stage_ti.error or None,
+            }
         if r.stage2:
             llm_findings = [
                 f for f in findings if f["analyzer_id"] == "llm_semantic"]
@@ -641,6 +763,7 @@ class Reporter:
 
         # --- Total scan duration ---
         total_ms = (r.stage1.duration_ms if r.stage1 else 0) + \
+                   (r.stage_ti.duration_ms if r.stage_ti else 0) + \
                    (r.stage2.duration_ms if r.stage2 else 0)
 
         # --- Determine which analyzers were used ---

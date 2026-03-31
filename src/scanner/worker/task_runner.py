@@ -96,13 +96,39 @@ class TaskRunner:
         logger.info("Task stage1: verdict=%s, %d rules matched",
                      stage1.verdict.value, len(stage1.matched_rules))
 
+        # Stage TI — threat intelligence enrichment
+        if self._scan_options.get("enable_qax_ti") and self._config.ti_api_key:
+            try:
+                from scanner.stage_ti.analyzer import TIAnalyzer
+                ti = TIAnalyzer(api_key=self._config.ti_api_key)
+                try:
+                    result.stage_ti = ti.analyze(skill)
+                finally:
+                    ti.close()
+                if result.stage_ti.verdict == Verdict.MALICIOUS:
+                    result.final_verdict = Verdict.MALICIOUS
+                elif (
+                    result.stage_ti.verdict == Verdict.SUSPICIOUS
+                    and result.final_verdict == Verdict.CLEAN
+                ):
+                    result.final_verdict = Verdict.SUSPICIOUS
+                logger.info("Task stage_ti: verdict=%s, %d entities",
+                            result.stage_ti.verdict.value,
+                            len(result.stage_ti.entities))
+            except Exception:
+                logger.warning("Stage TI failed, continuing", exc_info=True)
+
         st = self._config.stage
         if st == "1":
             want_stage2 = False
         elif st in ("full-llm", "2"):
             want_stage2 = True
         elif st == "full":
-            want_stage2 = stage1.verdict != Verdict.CLEAN
+            want_stage2 = (
+                stage1.verdict != Verdict.CLEAN
+                or (result.stage_ti is not None
+                    and result.stage_ti.verdict != Verdict.CLEAN)
+            )
         else:
             want_stage2 = False
 

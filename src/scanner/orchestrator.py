@@ -13,6 +13,7 @@ from scanner.models import AnalyzerStatus, ScanResult, SkillFile, Verdict
 from scanner.stage1.engine import RuleEngine
 from scanner.stage2.analyzer import SemanticAnalyzer
 from scanner.stage3.reporter import Reporter
+from scanner.stage_ti.analyzer import TIAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,8 @@ class Orchestrator:
         api_base: str | None = None,
         api_key_env: str = "ARK_API_KEY",
         report_all_skills: bool = False,
+        ti_api_key: str | None = None,
+        enable_qax_ti: bool = False,
     ):
         self._skills_dir = Path(skills_dir)
         self._output_dir = Path(output_dir)
@@ -42,6 +45,8 @@ class Orchestrator:
         self._model = model
         self._api_base = api_base
         self._api_key_env = api_key_env
+        self._ti_api_key = ti_api_key
+        self._enable_qax_ti = enable_qax_ti
         self._rule_engine = RuleEngine()
         self._reporter = Reporter(self._output_dir, report_all_skills=report_all_skills)
 
@@ -92,6 +97,10 @@ class Orchestrator:
                     Verdict.SUSPICIOUS),
             )
 
+            # Stage TI — threat intelligence enrichment
+            if self._enable_qax_ti and self._ti_api_key:
+                self._run_stage_ti(stage1_results)
+
             if self._stage == "1":
                 # Finalize with stage 1 only
                 for r in stage1_results:
@@ -103,7 +112,8 @@ class Orchestrator:
 
             if self._stage == "full":
                 needs_llm = any(
-                    r.stage1 and r.stage1.verdict != Verdict.CLEAN
+                    (r.stage1 and r.stage1.verdict != Verdict.CLEAN)
+                    or (r.stage_ti and r.stage_ti.verdict != Verdict.CLEAN)
                     for r in stage1_results
                 )
                 if not needs_llm:
@@ -136,6 +146,24 @@ class Orchestrator:
             "Scan complete. Malicious: %d, Suspicious: %d, Clean: %d. Report at %s",
             summary.malicious, summary.suspicious, summary.clean, self._output_dir,
         )
+
+    def _run_stage_ti(self, results: list[ScanResult]) -> None:
+        """Enrich ScanResult objects with TI lookups (in-place)."""
+        analyzer = TIAnalyzer(api_key=self._ti_api_key)
+        try:
+            for r in results:
+                r.stage_ti = analyzer.analyze(r.skill)
+                # Escalate final_verdict if TI found something worse
+                if r.stage_ti.verdict == Verdict.MALICIOUS:
+                    r.final_verdict = Verdict.MALICIOUS
+                elif (
+                    r.stage_ti.verdict == Verdict.SUSPICIOUS
+                    and r.final_verdict == Verdict.CLEAN
+                ):
+                    r.final_verdict = Verdict.SUSPICIOUS
+        finally:
+            analyzer.close()
+        logger.info("Stage TI complete: %d skills enriched", len(results))
 
     def _run_stage1(self) -> list[ScanResult]:
         results: list[ScanResult] = []
@@ -179,7 +207,8 @@ class Orchestrator:
         elif self._stage == "full":
             to_analyze = [
                 r for r in stage1_results
-                if r.stage1 and r.stage1.verdict != Verdict.CLEAN
+                if (r.stage1 and r.stage1.verdict != Verdict.CLEAN)
+                or (r.stage_ti and r.stage_ti.verdict != Verdict.CLEAN)
             ]
         else:
             to_analyze = []

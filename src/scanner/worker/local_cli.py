@@ -89,10 +89,35 @@ def _load_and_stage1(skill_zip: Path, rule_engine: RuleEngine) -> ScanResult:
 # Single-ZIP full pipeline (existing behaviour, now calls _load_and_stage1)
 # ---------------------------------------------------------------------------
 
+def _run_stage_ti_single(result: ScanResult, scan_cfg: ScanConfig) -> None:
+    """Run Stage TI on a single ScanResult (in-place). Never raises."""
+    if not (scan_cfg.enable_qax_ti and scan_cfg.ti_api_key):
+        return
+    try:
+        from scanner.stage_ti.analyzer import TIAnalyzer
+        ti = TIAnalyzer(api_key=scan_cfg.ti_api_key)
+        try:
+            result.stage_ti = ti.analyze(result.skill)
+        finally:
+            ti.close()
+        if result.stage_ti.verdict == Verdict.MALICIOUS:
+            result.final_verdict = Verdict.MALICIOUS
+        elif (
+            result.stage_ti.verdict == Verdict.SUSPICIOUS
+            and result.final_verdict == Verdict.CLEAN
+        ):
+            result.final_verdict = Verdict.SUSPICIOUS
+    except Exception:
+        logger.warning("Stage TI failed, continuing", exc_info=True)
+
+
 def _scan_single_skill(skill_zip: Path, scan_cfg: ScanConfig, enable_llm: bool) -> ScanResult:
-    """Run Stage 1 (+ optional Stage 2) on a single skill loaded from a local ZIP."""
+    """Run Stage 1 (+ optional Stage TI + optional Stage 2) on a single skill loaded from a local ZIP."""
     rule_engine = RuleEngine()
     result = _load_and_stage1(skill_zip, rule_engine)
+
+    # Stage TI
+    _run_stage_ti_single(result, scan_cfg)
 
     st = scan_cfg.stage
     if st == "1":
@@ -100,7 +125,11 @@ def _scan_single_skill(skill_zip: Path, scan_cfg: ScanConfig, enable_llm: bool) 
     elif st in ("full-llm", "2"):
         want_stage2 = True
     elif st == "full":
-        want_stage2 = result.stage1.verdict != Verdict.CLEAN
+        want_stage2 = (
+            result.stage1.verdict != Verdict.CLEAN
+            or (result.stage_ti is not None
+                and result.stage_ti.verdict != Verdict.CLEAN)
+        )
     else:
         want_stage2 = False
 
@@ -157,7 +186,8 @@ async def _run_stage2_batch(
     elif st == "full":
         to_analyze = [
             r for r in results
-            if r.stage1 and r.stage1.verdict != Verdict.CLEAN
+            if (r.stage1 and r.stage1.verdict != Verdict.CLEAN)
+            or (r.stage_ti and r.stage_ti.verdict != Verdict.CLEAN)
         ]
     else:  # "full-llm" or "2"
         to_analyze = results
@@ -236,6 +266,13 @@ def _scan_all_zips(
         sum(1 for r in results if r.stage1 and r.stage1.verdict != Verdict.CLEAN),
     )
 
+    # Stage TI — threat intelligence enrichment
+    if scan_cfg.enable_qax_ti and scan_cfg.ti_api_key:
+        logger.info("Stage TI: enriching %d skills with TI lookups", len(results))
+        for r in results:
+            _run_stage_ti_single(r, scan_cfg)
+        logger.info("Stage TI complete")
+
     # Determine which skills will NOT enter Stage 2 so we can write them now.
     will_run_s2 = enable_llm and scan_cfg.stage != "1"
     api_key = (scan_cfg.api_key or os.environ.get(scan_cfg.api_key_env)) if will_run_s2 else None
@@ -243,8 +280,12 @@ def _scan_all_zips(
     if will_run_s2 and api_key:
         if scan_cfg.stage in ("full-llm", "2"):
             stage1_only: list[ScanResult] = []
-        else:  # "full": only CLEAN skills skip Stage 2
-            stage1_only = [r for r in results if r.stage1 and r.stage1.verdict == Verdict.CLEAN]
+        else:  # "full": only CLEAN skills (both stage1 and stage_ti) skip Stage 2
+            stage1_only = [
+                r for r in results
+                if (r.stage1 and r.stage1.verdict == Verdict.CLEAN)
+                and (r.stage_ti is None or r.stage_ti.verdict == Verdict.CLEAN)
+            ]
     else:
         # Stage 2 won't run at all — every skill stays at Stage 1.
         stage1_only = list(results)

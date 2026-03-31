@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 
 from scanner.orchestrator import Orchestrator
@@ -94,6 +95,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Output per-skill report for every skill: with findings -> threats/, no findings -> clean/ (default: only skills with findings get threats/<id>.json)",
     )
+    parser.add_argument(
+        "--ti-api-key",
+        default=None,
+        help="QAX TI API key (default: read from TI_API_KEY env var)",
+    )
+    ti_group = parser.add_mutually_exclusive_group()
+    ti_group.add_argument(
+        "--enable-ti",
+        action="store_true",
+        default=True,
+        help="Enable threat intelligence IOC lookup (default: enabled)",
+    )
+    ti_group.add_argument(
+        "--disable-ti",
+        action="store_true",
+        help="Disable threat intelligence IOC lookup",
+    )
     return parser.parse_args(argv)
 
 
@@ -110,6 +128,9 @@ def main(argv: list[str] | None = None) -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("openai").setLevel(logging.WARNING)
 
+    enable_ti = args.enable_ti and not args.disable_ti
+    ti_api_key = args.ti_api_key or os.environ.get("TI_API_KEY")
+
     orchestrator = Orchestrator(
         skills_dir=args.path,
         output_dir=args.output,
@@ -122,6 +143,8 @@ def main(argv: list[str] | None = None) -> None:
         api_base=args.api_base,
         api_key_env=args.api_key_env,
         report_all_skills=args.report_all_skills,
+        ti_api_key=ti_api_key,
+        enable_qax_ti=enable_ti,
     )
     orchestrator.run()
 

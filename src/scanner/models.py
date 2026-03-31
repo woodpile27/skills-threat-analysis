@@ -112,6 +112,27 @@ class Stage1Result:
 
 
 @dataclass
+class TIEntityResult:
+    """A single IOC entity with its TI lookup result."""
+    entity: str              # IOC value (IP, domain, or URL)
+    kind: str                # "ip" or "domain_or_url"
+    risk: str                # "black", "suspicious", "white", "unknown"
+    tags: list[dict] = field(default_factory=list)
+    source_file: str = ""    # Relative path of the file where entity was found
+    position: tuple[int, int] = (0, 0)  # (start, end) character offset in source file
+
+
+@dataclass
+class StageTIResult:
+    """Result of the Threat Intelligence lookup stage."""
+    verdict: Verdict
+    entities: list[TIEntityResult] = field(default_factory=list)
+    duration_ms: int = 0
+    status: AnalyzerStatus = AnalyzerStatus.COMPLETED
+    error: str = ""
+
+
+@dataclass
 class Stage2Result:
     verdict: Verdict
     confidence: float = 0.0
@@ -125,6 +146,7 @@ class Stage2Result:
 class ScanResult:
     skill: SkillFile
     stage1: Optional[Stage1Result] = None
+    stage_ti: Optional[StageTIResult] = None
     stage2: Optional[Stage2Result] = None
     final_verdict: Verdict = Verdict.CLEAN
 

@@ -41,6 +41,8 @@ class ScanConfig:
     api_key_env: str = "ARK_API_KEY"
     batch_size: int = 5
     concurrency: int = 3
+    ti_api_key: str | None = None
+    enable_qax_ti: bool = False
 
 
 @dataclass
