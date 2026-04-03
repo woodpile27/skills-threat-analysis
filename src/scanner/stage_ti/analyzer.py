@@ -68,11 +68,11 @@ class TIAnalyzer:
         # 2. Split into IPs and domains/URLs
         ips: list[str] = []
         domains_urls: list[str] = []
-        # Track source_file and position per entity for reporting
-        entity_meta: dict[str, tuple[str, int, int]] = {}  # value -> (source_file, start, end)
+        # Track source_file, position, and decoded_from per entity for reporting
+        entity_meta: dict[str, tuple[str, int, int, str]] = {}  # value -> (source_file, start, end, decoded_from)
 
-        for kind, value, source_file, start, end in raw_entities:
-            entity_meta[value] = (source_file, start, end)
+        for kind, value, source_file, start, end, decoded_from in raw_entities:
+            entity_meta[value] = (source_file, start, end, decoded_from)
             if kind == "ip":
                 ips.append(value)
             else:
@@ -106,7 +106,7 @@ class TIAnalyzer:
             ti_data = ip_results.get(ip)
             risk = ti_data.get("risk", "unknown") if ti_data else "unknown"
             tags = ti_data.get("tags", []) if ti_data else []
-            meta = entity_meta.get(ip, ("", 0, 0))
+            meta = entity_meta.get(ip, ("", 0, 0, ""))
             entities.append(TIEntityResult(
                 entity=ip,
                 kind="ip",
@@ -114,13 +114,14 @@ class TIAnalyzer:
                 tags=tags,
                 source_file=meta[0],
                 position=(meta[1], meta[2]),
+                decoded_from=meta[3],
             ))
 
         for du in domains_urls:
             ti_data = domain_results.get(du)
             risk = ti_data.get("risk", "unknown") if ti_data else "unknown"
             tags = ti_data.get("tags", []) if ti_data else []
-            meta = entity_meta.get(du, ("", 0, 0))
+            meta = entity_meta.get(du, ("", 0, 0, ""))
             entities.append(TIEntityResult(
                 entity=du,
                 kind="domain_or_url",
@@ -128,6 +129,7 @@ class TIAnalyzer:
                 tags=tags,
                 source_file=meta[0],
                 position=(meta[1], meta[2]),
+                decoded_from=meta[3],
             ))
 
         # 5. Compute verdict (worst-of)

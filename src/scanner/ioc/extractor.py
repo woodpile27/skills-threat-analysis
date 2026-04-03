@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import ipaddress
 import re
 from urllib.parse import urlparse
@@ -184,7 +185,49 @@ def _extract_domains(text: str) -> list[tuple[str, int, int]]:
             continue
         if _is_benign_host(domain):
             continue
-        results.append((domain, m.start(), m.end()))
+        end = m.end()
+        # Skip method-call pattern: domain followed by '('
+        if end < len(text) and text[end:end + 1] == "(":
+            continue
+        # Skip single-char SLD: likely code property access (e.g., t.link, d.click)
+        parts = domain.split(".")
+        sld = parts[-2] if len(parts) >= 2 else parts[0]
+        if len(sld) == 1:
+            continue
+        results.append((domain, m.start(), end))
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Base64 payload decoding
+# ---------------------------------------------------------------------------
+
+_B64_RE = re.compile(
+    r"""(?:^|[\s'"=])([A-Za-z0-9+/]{20,}={0,2})(?:[\s'";\|]|$)""",
+    re.MULTILINE,
+)
+
+
+def _decode_base64_payloads(text: str) -> list[tuple[str, int, int]]:
+    """Find base64 strings, decode them, return ``(decoded_text, start, end)`` tuples.
+
+    *start*/*end* refer to the position of the base64 string in *text*.
+    Only returns payloads that look like commands/URLs (high printable ratio).
+    """
+    results: list[tuple[str, int, int]] = []
+    for m in _B64_RE.finditer(text):
+        candidate = m.group(1)
+        try:
+            decoded = base64.b64decode(candidate, validate=True).decode(
+                "utf-8", errors="ignore"
+            )
+        except Exception:
+            continue
+        # Heuristic: decoded content should be mostly printable and non-trivial
+        printable_ratio = sum(c.isprintable() for c in decoded) / max(len(decoded), 1)
+        if printable_ratio < 0.7 or len(decoded) < 10:
+            continue
+        results.append((decoded, m.start(1), m.end(1)))
     return results
 
 
@@ -195,21 +238,24 @@ def _extract_domains(text: str) -> list[tuple[str, int, int]]:
 def extract_entities(
     content: str,
     source_file: str = "",
-) -> list[tuple[str, str, str, int, int]]:
+) -> list[tuple[str, str, str, int, int, str]]:
     """Extract IOC entities from *content*.
 
-    Returns a deduplicated list of ``(kind, value, source_file, start, end)``
-    tuples where *kind* is ``"ip"`` or ``"domain_or_url"`` and *start*/*end*
-    are character offsets into *content*.
+    Returns a deduplicated list of
+    ``(kind, value, source_file, start, end, decoded_from)`` tuples where
+    *kind* is ``"ip"`` or ``"domain_or_url"``, *start*/*end* are character
+    offsets into *content*, and *decoded_from* is the original base64 string
+    if the entity was extracted from a decoded payload (empty string otherwise).
     """
     seen: set[tuple[str, str]] = set()
-    results: list[tuple[str, str, str, int, int]] = []
+    results: list[tuple[str, str, str, int, int, str]] = []
 
-    def _add(kind: str, value: str, start: int, end: int) -> None:
+    def _add(kind: str, value: str, start: int, end: int,
+             decoded_from: str = "") -> None:
         key = (kind, value)
         if key not in seen:
             seen.add(key)
-            results.append((kind, value, source_file, start, end))
+            results.append((kind, value, source_file, start, end, decoded_from))
 
     # 1. Extract IPs
     for ip, start, end in _extract_ipv4(content):
@@ -226,30 +272,44 @@ def extract_entities(
         if domain not in url_hosts:
             _add("domain_or_url", domain, start, end)
 
+    # 4. Extract IOCs from base64-encoded payloads
+    for decoded_text, b64_start, b64_end in _decode_base64_payloads(content):
+        b64_snippet = content[b64_start:b64_end][:40]
+        for ip, _, _ in _extract_ipv4(decoded_text):
+            _add("ip", ip, b64_start, b64_end, b64_snippet)
+        for url, host, _, _ in _extract_urls(decoded_text):
+            _add("domain_or_url", url, b64_start, b64_end, b64_snippet)
+            url_hosts.add(host)
+        for domain, _, _ in _extract_domains(decoded_text):
+            if domain not in url_hosts:
+                _add("domain_or_url", domain, b64_start, b64_end, b64_snippet)
+
     return results
 
 
 def extract_entities_from_files(
     files: list,
     fallback_content: str = "",
-) -> list[tuple[str, str, str, int, int]]:
+) -> list[tuple[str, str, str, int, int, str]]:
     """Extract IOC entities from a list of SkillFileSegment objects.
 
     If *files* is empty, falls back to extracting from *fallback_content*.
-    Returns a deduplicated list of ``(kind, value, source_file, start, end)``
-    tuples.
+    Returns a deduplicated list of
+    ``(kind, value, source_file, start, end, decoded_from)`` tuples.
     """
     if not files:
         return extract_entities(fallback_content)
 
     seen: set[tuple[str, str]] = set()
-    results: list[tuple[str, str, str, int, int]] = []
+    results: list[tuple[str, str, str, int, int, str]] = []
 
     for seg in files:
-        for kind, value, src, start, end in extract_entities(seg.content, seg.rel_path):
+        for kind, value, src, start, end, decoded_from in extract_entities(
+            seg.content, seg.rel_path
+        ):
             key = (kind, value)
             if key not in seen:
                 seen.add(key)
-                results.append((kind, value, src, start, end))
+                results.append((kind, value, src, start, end, decoded_from))
 
     return results

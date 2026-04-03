@@ -14,6 +14,7 @@ from scanner.stage1.engine import RuleEngine
 from scanner.stage2.analyzer import SemanticAnalyzer
 from scanner.stage3.reporter import Reporter
 from scanner.stage_ti.analyzer import TIAnalyzer
+from scanner.verdict_merge import apply_ti_deescalation
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +154,7 @@ class Orchestrator:
         try:
             for r in results:
                 r.stage_ti = analyzer.analyze(r.skill)
-                # Escalate final_verdict if TI found something worse
+                # Merge TI verdict with Stage 1 verdict
                 if r.stage_ti.verdict == Verdict.MALICIOUS:
                     r.final_verdict = Verdict.MALICIOUS
                 elif (
@@ -161,6 +162,10 @@ class Orchestrator:
                     and r.final_verdict == Verdict.CLEAN
                 ):
                     r.final_verdict = Verdict.SUSPICIOUS
+                else:
+                    new_verdict = apply_ti_deescalation(r.stage1, r.stage_ti)
+                    if new_verdict is not None:
+                        r.final_verdict = new_verdict
         finally:
             analyzer.close()
         logger.info("Stage TI complete: %d skills enriched", len(results))
@@ -224,7 +229,8 @@ class Orchestrator:
             batch = to_analyze[batch_start:batch_start + self._batch_size]
             items = [
                 (r.skill.id, r.skill.content,
-                 r.stage1.matched_rules if r.stage1 else [])
+                 r.stage1.matched_rules if r.stage1 else [],
+                 r.stage_ti.entities if r.stage_ti else [])
                 for r in batch
             ]
             stage2_results = await analyzer.analyze_batch(items)

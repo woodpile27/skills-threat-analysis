@@ -18,6 +18,7 @@ from scanner.models import AnalyzerStatus, ScanResult, Verdict
 from scanner.stage1.engine import RuleEngine
 from scanner.stage2.analyzer import SemanticAnalyzer
 from scanner.stage3.reporter import Reporter
+from scanner.verdict_merge import apply_ti_deescalation
 from scanner.worker.config import ScanConfig, load_config
 from scanner.worker.downloader import _load_from_zip
 
@@ -107,6 +108,10 @@ def _run_stage_ti_single(result: ScanResult, scan_cfg: ScanConfig) -> None:
             and result.final_verdict == Verdict.CLEAN
         ):
             result.final_verdict = Verdict.SUSPICIOUS
+        else:
+            new_verdict = apply_ti_deescalation(result.stage1, result.stage_ti)
+            if new_verdict is not None:
+                result.final_verdict = new_verdict
     except Exception:
         logger.warning("Stage TI failed, continuing", exc_info=True)
 
@@ -152,7 +157,8 @@ def _scan_single_skill(skill_zip: Path, scan_cfg: ScanConfig, enable_llm: bool) 
         batch_size=scan_cfg.batch_size,
     )
     skill = result.skill
-    s2 = asyncio.run(analyzer.analyze_batch([(skill.id, skill.content, result.stage1.matched_rules)]))[0]
+    ti_entities = result.stage_ti.entities if result.stage_ti else []
+    s2 = asyncio.run(analyzer.analyze_batch([(skill.id, skill.content, result.stage1.matched_rules, ti_entities)]))[0]
     result.stage2 = s2
     result.final_verdict = _merge_verdict(result, s2)
     return result
@@ -209,7 +215,9 @@ async def _run_stage2_batch(
     for batch_start in range(0, len(to_analyze), scan_cfg.batch_size):
         batch = to_analyze[batch_start:batch_start + scan_cfg.batch_size]
         items = [
-            (r.skill.id, r.skill.content, r.stage1.matched_rules if r.stage1 else [])
+            (r.skill.id, r.skill.content,
+             r.stage1.matched_rules if r.stage1 else [],
+             r.stage_ti.entities if r.stage_ti else [])
             for r in batch
         ]
         stage2_results = await analyzer.analyze_batch(items)

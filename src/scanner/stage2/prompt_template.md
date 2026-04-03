@@ -45,6 +45,11 @@ $skill_content
 ## Stage 1 Matched Rules
 $matched_rules
 
+## Threat Intelligence Results
+$ti_results
+
+**Important**: If Stage 1 flagged a URL/IP as dangerous but TI confirms it as "white" (benign), weigh this heavily — the IOC is likely safe and the Stage 1 match may be a false positive. Conversely, if TI reports "black" (malicious), treat the associated patterns as confirmed threats regardless of how innocuous they appear. Entities decoded from base64 are especially suspicious.
+
 ## Output Format (strict JSON)
 
 Respond ONLY with valid JSON, no other text:

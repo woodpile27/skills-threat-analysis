@@ -94,6 +94,8 @@ class RuleMatch:
     position: tuple[int, int]
     pattern: str = ""        # Original regex pattern string
     source_file: str = ""    # rel_path of the file where match was found
+    ti_note: str = ""        # TI adjustment note (includes original severity)
+    ti_ioc: str = ""         # Base IOC (hostname/IP) that triggered de-escalation, for verdict dedup
 
 
 @dataclass
@@ -120,6 +122,7 @@ class TIEntityResult:
     tags: list[dict] = field(default_factory=list)
     source_file: str = ""    # Relative path of the file where entity was found
     position: tuple[int, int] = (0, 0)  # (start, end) character offset in source file
+    decoded_from: str = ""   # Non-empty if entity was extracted from a base64-encoded payload
 
 
 @dataclass

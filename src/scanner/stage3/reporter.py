@@ -123,6 +123,11 @@ _TI_REMEDIATION = (
     "威胁情报系统已将其标记为恶意指标。若已安装，请立即审查网络访问日志并隔离相关资源。"
 )
 
+_TI_DEESC_REMEDIATION = (
+    "该模式已被威胁情报查询降级。相关 IOC 未被标记为恶意，但建议在部署前确认目标地址可信，"
+    "并检查该命令是否在受控环境中执行。"
+)
+
 
 # Chinese names for rule_name values (Stage 1 findings).
 _RULE_NAME_ZH: dict[str, str] = {
@@ -252,6 +257,81 @@ _SEVERITY_ORDER = {
     Severity.INFO: 2,
     Severity.SAFE: 1,
 }
+
+# TI risk → ti_score mapping for network IOCs
+_TI_RISK_SCORE: dict[str, float] = {
+    "black": 95.0,      # critical
+    "suspicious": 60.0,  # medium
+    "white": 0.0,
+    "unknown": 0.0,
+}
+
+
+def _map_ioc_type(kind: str, entity: str) -> str:
+    """Map internal IOC kind to standard ioc_type."""
+    if kind == "ip":
+        return "ip"
+    if "://" in entity:
+        return "url"
+    return "domain"
+
+
+def _extract_ti_categories(ent) -> list[str]:
+    """Extract threat category tags from TI entity."""
+    cats: list[str] = []
+    if ent.tags:
+        for tag_group in ent.tags:
+            for fam in tag_group.get("malicious_family", []):
+                name = fam.get("name", "")
+                if name:
+                    cats.append(name)
+    if not cats and ent.risk == "black":
+        cats = ["malicious"]
+    elif not cats and ent.risk == "suspicious":
+        cats = ["suspicious"]
+    return cats
+
+
+def _build_ti_field(ent) -> dict:
+    """Build the threat_intel field for a TI-generated finding."""
+    return {
+        "ioc_type": _map_ioc_type(ent.kind, ent.entity),
+        "ioc_value": ent.entity,
+        "ti_score": _TI_RISK_SCORE.get(ent.risk, 0.0),
+        "ti_categories": _extract_ti_categories(ent),
+        "ti_source": "qax_ti",
+    }
+
+
+def _build_ti_field_from_note(m, stage_ti) -> dict | None:
+    """Build the threat_intel field for a Stage 1 finding with TI adjustment."""
+    if not stage_ti or not stage_ti.entities:
+        return None
+    # Find the first TI entity that appears in matched_text
+    for ent in stage_ti.entities:
+        if ent.entity in m.matched_text:
+            return {
+                "ioc_type": _map_ioc_type(ent.kind, ent.entity),
+                "ioc_value": ent.entity,
+                "ti_score": _TI_RISK_SCORE.get(ent.risk, 0.0),
+                "ti_categories": _extract_ti_categories(ent),
+                "ti_source": "qax_ti",
+            }
+        # Also check hostname for URL entities
+        if "://" in ent.entity:
+            try:
+                parsed = urlparse(ent.entity)
+                if parsed.hostname and parsed.hostname in m.matched_text:
+                    return {
+                        "ioc_type": _map_ioc_type(ent.kind, ent.entity),
+                        "ioc_value": ent.entity,
+                        "ti_score": _TI_RISK_SCORE.get(ent.risk, 0.0),
+                        "ti_categories": _extract_ti_categories(ent),
+                        "ti_source": "qax_ti",
+                    }
+            except Exception:
+                pass
+    return None
 
 
 def _make_finding_id(rule_id: str, file_path: str, line_number: int) -> str:
@@ -526,12 +606,14 @@ class Reporter:
                     "description": (
                         f"在 {actual_file_path} 第 {line_no} 行检测到{rule_name_zh}类型的可疑模式。\n\n"
                         f"匹配内容：{m.matched_text[:400]}"
+                        + (f"\n\n🔍 TI 调整：{m.ti_note}" if m.ti_note else "")
                     ),
                     "title_en": f"Rule Match: {m.rule_id} ({m.rule_name}) — {matched_preview}",
                     "description_en": (
                         f"Detected suspicious pattern of type {m.rule_name} "
                         f"at {actual_file_path} line {line_no}.\n\n"
                         f"Matched content: {m.matched_text[:400]}"
+                        + (f"\n\nTI adjustment: {m.ti_note}" if m.ti_note else "")
                     ),
                     "location": {
                         "file_path": actual_file_path,
@@ -540,7 +622,7 @@ class Reporter:
                         "column_start": None,
                         "snippet": snippet[:500],
                     },
-                    "remediation": _CATEGORY_REMEDIATION.get(category),
+                    "remediation": _TI_DEESC_REMEDIATION if m.ti_note else _CATEGORY_REMEDIATION.get(category),
                     "evidence": {
                         "matched_pattern": m.pattern,
                         "matched_content": m.matched_text[:500],
@@ -638,23 +720,31 @@ class Reporter:
                     if families:
                         tag_summary = f"关联恶意家族: {', '.join(f for f in families if f)}"
 
+                b64_suffix = ""
+                b64_suffix_en = ""
+                if ent.decoded_from:
+                    b64_suffix = " [经 Base64 解码发现]"
+                    b64_suffix_en = " [decoded from Base64]"
+
                 findings.append({
                     "id": fid,
                     "rule_id": rule_id,
-                    "analyzer_id": "threat_intel",
+                    "analyzer_id": "qax_ti",
                     "category": category,
                     "severity": severity,
-                    "title": f"{zh_title}: {ent.entity}",
+                    "title": f"{zh_title}: {ent.entity}{b64_suffix}",
                     "description": (
                         f"{zh_desc}\n\n"
-                        f"实体: {ent.entity} (类型: {ent.kind}, 风险等级: {ent.risk})\n"
+                        f"实体: {ent.entity} (类型: {ent.kind}, 风险等级: {ent.risk})"
+                        f"{f'，该实体经 Base64 解码后发现（原始编码: {ent.decoded_from[:80]}）' if ent.decoded_from else ''}\n"
                         f"来源文件: {ti_file_path}"
                         f"{f' 第 {ti_line_no} 行' if ti_line_no else ''}\n"
                         f"{tag_summary}"
                     ),
-                    "title_en": f"Threat Intel: {ent.risk} indicator — {ent.entity}",
+                    "title_en": f"Threat Intel: {ent.risk} indicator — {ent.entity}{b64_suffix_en}",
                     "description_en": (
                         f"TI lookup flagged {ent.entity} ({ent.kind}) as {ent.risk}."
+                        f"{f' Decoded from Base64 payload: {ent.decoded_from[:80]}' if ent.decoded_from else ''}"
                     ),
                     "location": {
                         "file_path": ti_file_path,
@@ -664,17 +754,12 @@ class Reporter:
                         "snippet": ti_snippet[:500],
                     },
                     "evidence": {
-                        "matched_pattern": "threat_intel_lookup",
+                        "matched_pattern": "qax_ti_lookup",
                         "matched_content": ent.entity,
                         "context_before": ti_ctx_before[:500],
                         "context_after": ti_ctx_after[:500],
                     },
-                    "threat_intel": {
-                        "entity": ent.entity,
-                        "kind": ent.kind,
-                        "risk": ent.risk,
-                        "tags": ent.tags,
-                    },
+                    "threat_intel": _build_ti_field(ent),
                     "remediation": _TI_REMEDIATION,
                     "metadata": {"ti_generated": True},
                     "references": [],
@@ -728,9 +813,9 @@ class Reporter:
             }
         if r.stage_ti:
             ti_findings = [
-                f for f in findings if f["analyzer_id"] == "threat_intel"]
-            analyzer_results["threat_intel"] = {
-                "analyzer_id": "threat_intel",
+                f for f in findings if f["analyzer_id"] == "qax_ti"]
+            analyzer_results["qax_ti"] = {
+                "analyzer_id": "qax_ti",
                 "status": r.stage_ti.status.value,
                 "duration_ms": r.stage_ti.duration_ms,
                 "findings": ti_findings,
@@ -880,20 +965,18 @@ class Reporter:
                 has_llm_verdict = False
 
         if not has_llm_verdict:
-            if critical >= 1:
-                result = Verdict.MALICIOUS
+            # Use final_verdict (incorporates TI de-escalation) when available
+            result = r.final_verdict
+            if result == Verdict.MALICIOUS:
                 action = RecommendedAction.BLOCK
                 confidence = max(0.8, r.stage2.confidence if r.stage2 else 0.8)
-            elif high >= 1 or total >= 3:
-                result = Verdict.SUSPICIOUS
+            elif result == Verdict.SUSPICIOUS:
                 action = RecommendedAction.REVIEW
                 confidence = r.stage2.confidence if r.stage2 else 0.6
-            elif total > 0:
-                result = Verdict.SUSPICIOUS
+            elif result == Verdict.CLEAN and total > 0:
                 action = RecommendedAction.REVIEW
-                confidence = r.stage2.confidence if r.stage2 else 0.4
+                confidence = 0.6
             else:
-                result = Verdict.CLEAN
                 action = RecommendedAction.ALLOW
                 confidence = 1.0
 
@@ -931,33 +1014,65 @@ class Reporter:
         # Key finding IDs: top-3 by severity (findings already sorted)
         key_ids = [f["id"] for f in findings[:3]]
 
+        # TI hit summary
+        ti_suffix = ""
+        ti_suffix_en = ""
+        if r.stage_ti and r.stage_ti.entities:
+            black_ents = [e for e in r.stage_ti.entities if e.risk == "black"]
+            sus_ents = [e for e in r.stage_ti.entities if e.risk == "suspicious"]
+            ti_parts_zh = []
+            ti_parts_en = []
+            if black_ents:
+                ti_parts_zh.append(f"情报命中 {len(black_ents)} 个恶意 IOC")
+                ti_parts_en.append(f"TI flagged {len(black_ents)} malicious IOC(s)")
+            if sus_ents:
+                ti_parts_zh.append(f"情报命中 {len(sus_ents)} 个可疑 IOC")
+                ti_parts_en.append(f"TI flagged {len(sus_ents)} suspicious IOC(s)")
+            deesc_count = sum(1 for m in (r.stage1.matched_rules if r.stage1 else []) if m.ti_note)
+            if deesc_count > 0 and not black_ents and not sus_ents:
+                ti_parts_zh.append(f"情报查询降级 {deesc_count} 个 finding")
+                ti_parts_en.append(f"TI downgraded {deesc_count} finding(s)")
+            if ti_parts_zh:
+                ti_suffix = "。" + "，".join(ti_parts_zh)
+                ti_suffix_en = ". " + ", ".join(ti_parts_en)
+
         if result == Verdict.MALICIOUS:
             summary = (
                 f"检测到恶意威胁！共发现 {total} 个安全问题（{sev_str}），"
-                f"主要威胁类型: {top_cats}。强烈建议拒绝安装该 Skill 包。"
+                f"主要威胁类型: {top_cats}{ti_suffix}。强烈建议拒绝安装该 Skill 包。"
             )
             summary_en = (
                 f"Malicious threats detected! Found {total} security issues ({sev_str}), "
-                f"primary threat types: {top_cats_en}. Strongly recommend rejecting installation."
+                f"primary threat types: {top_cats_en}{ti_suffix_en}. Strongly recommend rejecting installation."
             )
         elif result == Verdict.SUSPICIOUS:
             summary = (
                 f"检测到可疑行为，共发现 {total} 个安全问题（{sev_str}），"
-                f"主要威胁类型: {top_cats}。建议人工审查后决定。"
+                f"主要威胁类型: {top_cats}{ti_suffix}。建议人工审查后决定。"
             )
             summary_en = (
                 f"Suspicious behavior detected, found {total} security issues ({sev_str}), "
-                f"primary threat types: {top_cats_en}. Recommend manual review."
+                f"primary threat types: {top_cats_en}{ti_suffix_en}. Recommend manual review."
             )
         elif result == Verdict.CLEAN and total > 0:
-            summary = (
-                f"规则扫描命中 {total} 个疑似问题（{sev_str}），"
-                f"经 LLM 复验判定为安全，属于误报。"
-            )
-            summary_en = (
-                f"Rule scan matched {total} potential issues ({sev_str}), "
-                f"but LLM verification determined them as false positives."
-            )
+            if has_llm_verdict:
+                summary = (
+                    f"规则扫描命中 {total} 个疑似问题（{sev_str}），"
+                    f"经 LLM 复验判定为安全，属于误报。"
+                )
+                summary_en = (
+                    f"Rule scan matched {total} potential issues ({sev_str}), "
+                    f"but LLM verification determined them as false positives."
+                )
+            else:
+                summary = (
+                    f"规则扫描命中 {total} 个疑似问题（{sev_str}），"
+                    f"经威胁情报查询确认相关 IOC 无风险，severity 已降级{ti_suffix}。"
+                )
+                summary_en = (
+                    f"Rule scan matched {total} potential issues ({sev_str}), "
+                    f"TI lookup confirmed associated IOCs are not risky, severity downgraded{ti_suffix_en}."
+                )
         else:
             summary = "未检测到安全威胁。"
             summary_en = "No security threats detected."

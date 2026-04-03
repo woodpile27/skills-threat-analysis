@@ -14,6 +14,7 @@ from scanner.models import AnalyzerStatus, ScanResult, Verdict
 from scanner.stage1.engine import RuleEngine
 from scanner.stage2.analyzer import SemanticAnalyzer
 from scanner.stage3.reporter import Reporter
+from scanner.verdict_merge import apply_ti_deescalation
 from scanner.worker.config import ScanConfig
 from scanner.worker.downloader import download_and_load
 from scanner.worker.mongo_store import MongoStore
@@ -112,6 +113,10 @@ class TaskRunner:
                     and result.final_verdict == Verdict.CLEAN
                 ):
                     result.final_verdict = Verdict.SUSPICIOUS
+                else:
+                    new_verdict = apply_ti_deescalation(result.stage1, result.stage_ti)
+                    if new_verdict is not None:
+                        result.final_verdict = new_verdict
                 logger.info("Task stage_ti: verdict=%s, %d entities",
                             result.stage_ti.verdict.value,
                             len(result.stage_ti.entities))
@@ -150,7 +155,8 @@ class TaskRunner:
                 concurrency=self._config.concurrency,
                 batch_size=self._config.batch_size,
             )
-            items = [(skill.id, skill.content, stage1.matched_rules)]
+            ti_entities = result.stage_ti.entities if result.stage_ti else []
+            items = [(skill.id, skill.content, stage1.matched_rules, ti_entities)]
             stage2_results = asyncio.run(analyzer.analyze_batch(items))
             s2 = stage2_results[0]
             result.stage2 = s2

@@ -17,6 +17,7 @@ from scanner.models import (
     RuleMatch,
     Severity,
     Stage2Result,
+    TIEntityResult,
     Threat,
     ThreatCategory,
     Verdict,
@@ -96,28 +97,29 @@ class SemanticAnalyzer:
         self._prompt_template = Template(_PROMPT_TEMPLATE_PATH.read_text(encoding="utf-8"))
 
     async def analyze_batch(
-        self, items: list[tuple[str, str, list[RuleMatch]]]
+        self, items: list[tuple[str, str, list[RuleMatch], list[TIEntityResult]]]
     ) -> list[Stage2Result]:
         """Analyze a batch of skills concurrently.
 
         Args:
-            items: list of (skill_id, content, matched_rules) tuples.
+            items: list of (skill_id, content, matched_rules, ti_entities) tuples.
 
         Returns:
             list of Stage2Result in the same order.
         """
         tasks = [
-            self._analyze_one(skill_id, content, matched_rules)
-            for skill_id, content, matched_rules in items
+            self._analyze_one(skill_id, content, matched_rules, ti_entities)
+            for skill_id, content, matched_rules, ti_entities in items
         ]
         return await asyncio.gather(*tasks)
 
     async def _analyze_one(
-        self, skill_id: str, content: str, matched_rules: list[RuleMatch]
+        self, skill_id: str, content: str, matched_rules: list[RuleMatch],
+        ti_entities: list[TIEntityResult] | None = None,
     ) -> Stage2Result:
         start = time.monotonic()
         async with self._semaphore:
-            prompt = self._build_prompt(content, matched_rules)
+            prompt = self._build_prompt(content, matched_rules, ti_entities or [])
             for attempt in range(1, self._max_retries + 1):
                 try:
                     result = await self._call_llm(prompt)
@@ -194,7 +196,10 @@ class SemanticAnalyzer:
             status=AnalyzerStatus.FAILED,
         )
 
-    def _build_prompt(self, content: str, matched_rules: list[RuleMatch]) -> str:
+    def _build_prompt(
+        self, content: str, matched_rules: list[RuleMatch],
+        ti_entities: list[TIEntityResult] | None = None,
+    ) -> str:
         escaped = content[:_MAX_CONTENT_LENGTH]
 
         if not matched_rules:
@@ -237,9 +242,28 @@ class SemanticAnalyzer:
                 lines.append(f"- ... and {omitted} more matches omitted")
             rules_desc = "\n".join(lines)
 
+        # Format TI results
+        if not ti_entities:
+            ti_desc = "No IOC entities found or TI lookup not performed."
+        else:
+            ti_lines = []
+            for e in ti_entities:
+                tag_info = ""
+                if e.tags:
+                    families = [t.get("malicious_family", []) for t in e.tags]
+                    flat = [f["name"] for fl in families for f in fl if "name" in f]
+                    if flat:
+                        tag_info = f" (families: {', '.join(flat)})"
+                decoded = f" [decoded from base64]" if e.decoded_from else ""
+                ti_lines.append(
+                    f"- {e.entity} ({e.kind}): risk={e.risk}{tag_info}{decoded}"
+                )
+            ti_desc = "\n".join(ti_lines)
+
         return self._prompt_template.safe_substitute(
             skill_content=escaped,
             matched_rules=rules_desc,
+            ti_results=ti_desc,
         )
 
     async def _call_llm(self, prompt: str) -> dict[str, Any]:
