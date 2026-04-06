@@ -153,7 +153,7 @@ class Orchestrator:
         analyzer = TIAnalyzer(api_key=self._ti_api_key)
         try:
             for r in results:
-                r.stage_ti = analyzer.analyze(r.skill)
+                r.stage_ti = analyzer.analyze(r.skill, r.stage1)
                 # Merge TI verdict with Stage 1 verdict
                 if r.stage_ti.verdict == Verdict.MALICIOUS:
                     r.final_verdict = Verdict.MALICIOUS

@@ -103,7 +103,7 @@ class TaskRunner:
                 from scanner.stage_ti.analyzer import TIAnalyzer
                 ti = TIAnalyzer(api_key=self._config.ti_api_key)
                 try:
-                    result.stage_ti = ti.analyze(skill)
+                    result.stage_ti = ti.analyze(skill, result.stage1)
                 finally:
                     ti.close()
                 if result.stage_ti.verdict == Verdict.MALICIOUS:

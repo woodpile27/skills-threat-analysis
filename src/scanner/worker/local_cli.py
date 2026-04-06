@@ -98,7 +98,7 @@ def _run_stage_ti_single(result: ScanResult, scan_cfg: ScanConfig) -> None:
         from scanner.stage_ti.analyzer import TIAnalyzer
         ti = TIAnalyzer(api_key=scan_cfg.ti_api_key)
         try:
-            result.stage_ti = ti.analyze(result.skill)
+            result.stage_ti = ti.analyze(result.skill, result.stage1)
         finally:
             ti.close()
         if result.stage_ti.verdict == Verdict.MALICIOUS:
