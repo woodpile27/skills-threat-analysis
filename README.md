@@ -4,7 +4,7 @@ A prompt injection and malicious behavior scanner for Claude Code skills from Cl
 
 ## Overview
 
-With the rapid growth of community-contributed skills (~100k+), there is an increasing risk of malicious skills embedding prompt injection attacks, credential theft, data exfiltration, and other threats. This tool automates the detection of such threats through a three-stage scanning pipeline.
+With the rapid growth of community-contributed skills (~100k+), there is an increasing risk of malicious skills embedding prompt injection attacks, credential theft, data exfiltration, and other threats. This tool automates the detection of such threats through a four-stage scanning pipeline.
 
 ### Threat Categories
 
@@ -37,7 +37,7 @@ With the rapid growth of community-contributed skills (~100k+), there is an incr
 | PI-008 | Credential Access | HIGH | * |
 | PI-009 | Network Exfiltration | MEDIUM | * |
 | PI-010 | Filesystem Destruction | HIGH | * |
-| PI-011 | Obfuscation Standalone | MEDIUM | * |
+| PI-011 | Obfuscation Standalone | LOW | * |
 | PI-012 | Crypto Wallet Access | HIGH | * |
 | PI-013 | Persistence Mechanism | HIGH | * |
 | PI-014 | Privilege Escalation | HIGH | * |
@@ -54,26 +54,48 @@ Stage 2 uses LLM semantic analysis to detect 17 threat categories:
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│           /scan-skills (entry)              │
-└──────────────────┬──────────────────────────┘
-                   ▼
-┌─────────────────────────────────────────────┐
-│            Orchestrator                     │
-└───┬──────────────┬──────────────┬───────────┘
-    ▼              ▼              ▼
- Stage 1        Stage 2        Stage 3
- Rule Engine    LLM Analysis   Report Gen
- (14 regex)    (OpenAI API)   (JSON + MD)
+┌─────────────────────────────────────────────────────────┐
+│                  /scan-skills (entry)                   │
+└──────────────────────────┬──────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│                      Orchestrator                       │
+└───┬──────────────┬──────────────┬──────────────┬────────┘
+    ▼              ▼              ▼               ▼
+ Stage 1        Stage TI       Stage 2         Stage 3
+ Rule Engine    TI Lookup      LLM Analysis    Report Gen
+ (17 rules)    (QAX TI API)   (LLM API)       (JSON + MD)
 ```
 
 - **Stage 1** — Fast regex-based filtering with 17 rules (80+ patterns). Classifies skills as `CLEAN` or `SUSPICIOUS`. Supports both English and Chinese patterns.
+- **Stage TI** — Threat Intelligence lookup via QAX TI API. IOC extraction is scoped to the source line of network/encoding-related Stage 1 findings (PI-004/005/006/009/011/016). Malicious IOCs escalate verdict; known-benign IOCs can de-escalate severity of individual findings.
 - **Stage 2** — Semantic analysis via OpenAI-compatible LLM API for `SUSPICIOUS` skills. Async batched requests with retry logic. Detects 17 threat categories.
-- **Stage 3** — Generates per-skill threat reports (QAX ScanReport schema v1.0) and batch summary reports in JSON and Markdown.
+- **Stage 3** — Generates per-skill threat reports (QAX ScanReport schema v2.0) and batch summary reports in JSON and Markdown.
 
 ### Verdict Logic
 
-When Stage 2 LLM analysis is available, its verdict takes priority with one safety guard:
+The pipeline computes `final_verdict` in order, each stage able to escalate or de-escalate:
+
+**Stage 1 → initial verdict** (findings-based):
+
+| Condition | Result | Action |
+|-----------|--------|--------|
+| CRITICAL findings ≥ 1 | SUSPICIOUS | REVIEW |
+| HIGH findings ≥ 1 | SUSPICIOUS | REVIEW |
+| MEDIUM findings ≥ 2 | SUSPICIOUS | REVIEW |
+| No findings | CLEAN | ALLOW |
+
+**Stage TI → may escalate or de-escalate**:
+
+| TI Result | Effect |
+|-----------|--------|
+| Any IOC is `black` (malicious) | Escalate to MALICIOUS |
+| Any IOC is `suspicious` | Escalate to SUSPICIOUS if currently CLEAN |
+| All related IOCs are `white` (benign) | De-escalate finding severity to LOW |
+| All related IOCs are `unknown` | De-escalate CRITICAL → MEDIUM, HIGH → LOW |
+| Any `black`/`suspicious` IOC present | No de-escalation for that finding |
+
+**Stage 2 → final verdict** (when LLM is enabled):
 
 | Stage 2 Verdict | Stage 1 CRITICAL findings | Final Result | Action |
 |----------------|--------------------------|-------------|--------|
@@ -82,19 +104,11 @@ When Stage 2 LLM analysis is available, its verdict takes priority with one safe
 | CLEAN | 0 | CLEAN | ALLOW (Stage 1 findings treated as false positives) |
 | CLEAN | ≥ 1 | SUSPICIOUS | REVIEW (LLM may have missed a high-confidence threat) |
 
-When Stage 2 is absent (stage-1-only mode), findings-based logic is used:
-
-| Condition | Result | Action |
-|-----------|--------|--------|
-| CRITICAL findings >= 1 | SUSPICIOUS | REVIEW |
-| HIGH findings >= 1 | SUSPICIOUS | REVIEW |
-| MEDIUM findings >= 2 | SUSPICIOUS | REVIEW |
-| No findings | CLEAN | ALLOW |
-
 ### False Positive Mitigation
 
-- Code blocks and blockquotes are masked during rule matching
+- Code blocks and blockquotes are masked during Stage 1 rule matching
 - Educational / defensive skills referencing attack patterns are not flagged
+- Stage TI de-escalates findings whose IOCs are known-benign (`white`) or unrecorded (`unknown`)
 - Stage 2 LLM overrides Stage 1 false positives when it determines a skill is benign (for non-CRITICAL findings)
 - When Stage 2 says CLEAN but Stage 1 has ≥1 CRITICAL finding, result is downgraded to SUSPICIOUS/REVIEW as a safety guard
 - Low-confidence LLM results are routed to human review instead of auto-classified
@@ -102,7 +116,8 @@ When Stage 2 is absent (stage-1-only mode), findings-based logic is used:
 ## Installation
 
 ```bash
-poetry install
+conda activate skills-threat
+pip install -e .
 ```
 
 ## Usage
@@ -158,7 +173,9 @@ python -m scanner.cli --path ./skills/ -v
 | `--resume` | — | Resume a scan by its scan ID |
 | `--model` | `glm-4-plus` | LLM model name for Stage 2 |
 | `--api-base` | Volcano Engine ARK | OpenAI-compatible API base URL |
-| `--api-key-env` | `ARK_API_KEY` | Environment variable name for API key |
+| `--api-key-env` | `ARK_API_KEY` | Environment variable name for Stage 2 API key |
+| `--enable-qax-ti` | off | Enable Stage TI (QAX Threat Intelligence lookup) |
+| `--ti-api-key-env` | `QAX_TI_API_KEY` | Environment variable name for QAX TI API key |
 | `--log-level` | `INFO` | Logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `--verbose` / `-v` | — | Shorthand for `--log-level DEBUG` |
 | `--report-all-skills` | — | Output per-skill report for every skill: skills with findings → `threats/`, clean skills → `clean/` (default: only skills with findings get `threats/<id>.json`) |
@@ -305,6 +322,7 @@ Key sections in `config.yaml`:
 | `mongodb` | `reports_collection` | Collection for scan reports |
 | `scan` | `stage` | `full` (conditional LLM), `full-llm` (LLM on every skill), `1`, or `2` |
 | `scan` | `model`, `api_base`, `api_key_env` | LLM settings for Stage 2 |
+| `scan` | `enable_qax_ti`, `ti_api_key` | Enable Stage TI and provide QAX TI API key |
 
 ### Start a Worker
 
@@ -454,35 +472,43 @@ bash deploy/update.sh systemd      # systemd 模式
 ```
 src/scanner/
 ├── cli.py              # CLI entry point
-├── orchestrator.py     # Pipeline coordinator
-├── loader.py           # Skill directory loader
-├── models.py           # Data models (Verdict, ThreatCategory, etc.)
+├── orchestrator.py     # 4-stage pipeline coordinator
+├── loader.py           # Skill directory / ZIP loader
+├── models.py           # Data models (Verdict, ThreatCategory, RuleMatch, etc.)
+├── verdict_merge.py    # TI de-escalation and verdict reclassification
+├── excluded_dirs.py    # Directory exclusion rules for file traversal
 ├── stage1/
 │   ├── engine.py       # Regex rule engine
-│   └── rules.yaml      # Detection rules (PI-001 ~ PI-017)
+│   ├── rules.yaml      # Detection rules (PI-001 ~ PI-017)
+│   └── advanced.py     # Advanced detection helpers (PA-001, etc.)
+├── stage_ti/
+│   ├── analyzer.py     # IOC extraction (line-window scoped), TI verdict aggregation
+│   └── ti_client.py    # QAX TI API client
+├── ioc/
+│   └── extractor.py    # IP / domain / URL / Base64-decoded IOC extraction
 ├── stage2/
 │   ├── analyzer.py     # Async LLM semantic analyzer
 │   └── prompt_template.md
 ├── stage3/
-│   └── reporter.py     # JSON + Markdown report generator (QAX schema)
+│   └── reporter.py     # JSON + Markdown report generator (QAX ScanReport schema v2.0)
 └── worker/
     ├── cli.py          # Worker CLI entry point (scan-worker, RabbitMQ mode)
     ├── local_cli.py    # Local CLI entry points (scan-worker-zip / scan-worker-batch)
     ├── config.py       # YAML config loader
     ├── consumer.py     # RabbitMQ consumer (dual-thread architecture)
-    ├── task_runner.py   # Single-task scan pipeline
-    ├── mongo_store.py   # MongoDB task + report storage
-    └── downloader.py    # HTTP download + ZIP extraction
+    ├── task_runner.py  # Single-task scan pipeline
+    ├── mongo_store.py  # MongoDB task + report storage
+    └── downloader.py   # HTTP download + ZIP extraction
 ```
 
 ## Development
 
 ```bash
-# Run tests
-pytest tests/ -v
+# Run tests (exclude worker integration tests that require pika/MongoDB)
+pytest tests/ --ignore=tests/test_worker.py -v
 
 # Run tests with coverage
-pytest tests/ -v --cov=scanner
+pytest tests/ --ignore=tests/test_worker.py -v --cov=scanner
 ```
 
 ## License

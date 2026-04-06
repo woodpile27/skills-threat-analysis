@@ -15,8 +15,8 @@ Prompt Injection scanner for Claude Code skills.
     - `engine.py` - Regex matching engine
     - `rules.yaml` - Detection rule definitions
     - `advanced.py` - Advanced detection helpers
-  - `stage_ti/` - Stage TI: Threat Intelligence lookup
-    - `analyzer.py` - IOC extraction and TI verdict aggregation
+  - `stage_ti/` - Stage TI: Threat Intelligence lookup (scoped to network/encoding findings)
+    - `analyzer.py` - IOC extraction (line-window per finding), TI verdict aggregation, `TI_TARGET_RULES`
     - `ti_client.py` - QAX TI API client
   - `ioc/` - IOC extraction utilities
     - `extractor.py` - IP/domain/URL/Base64-encoded IOC extraction
