@@ -16,6 +16,9 @@ from typing import Any
 
 import requests
 
+
+requests.packages.urllib3.disable_warnings()
+
 logger = logging.getLogger(__name__)
 
 TI_WEBAPI_BASE = "https://webapi.ti.qianxin.com"

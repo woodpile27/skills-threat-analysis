@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import logging
 import time
 from pathlib import Path
 from string import Template
 from typing import Any
+from urllib.parse import urlparse
 
 import openai
 
@@ -243,28 +245,81 @@ class SemanticAnalyzer:
             rules_desc = "\n".join(lines)
 
         # Format TI results
-        if not ti_entities:
-            ti_desc = "No IOC entities found or TI lookup not performed."
-        else:
-            ti_lines = []
-            for e in ti_entities:
-                tag_info = ""
-                if e.tags:
-                    families = [t.get("malicious_family", []) for t in e.tags]
-                    flat = [f["name"] for fl in families for f in fl if "name" in f]
-                    if flat:
-                        tag_info = f" (families: {', '.join(flat)})"
-                decoded = f" [decoded from base64]" if e.decoded_from else ""
-                ti_lines.append(
-                    f"- {e.entity} ({e.kind}): risk={e.risk}{tag_info}{decoded}"
-                )
-            ti_desc = "\n".join(ti_lines)
+        ti_desc = self._format_ti_results(ti_entities or [])
 
         return self._prompt_template.safe_substitute(
             skill_content=escaped,
             matched_rules=rules_desc,
             ti_results=ti_desc,
         )
+
+    @staticmethod
+    def _format_ti_results(ti_entities: list[TIEntityResult]) -> str:
+        if not ti_entities:
+            return "No IOC entities found or TI lookup not performed."
+
+        by_value: dict[str, TIEntityResult] = {}
+        for entity in ti_entities:
+            by_value.setdefault(entity.entity, entity)
+
+        covered: set[str] = set()
+        lines: list[str] = []
+
+        for entity in ti_entities:
+            if entity.entity in covered:
+                continue
+            if entity.kind != "domain_or_url" or "://" not in entity.entity:
+                continue
+
+            parts = [f"url={entity.entity}: {SemanticAnalyzer._format_ti_fact(entity)}"]
+            covered.add(entity.entity)
+
+            try:
+                hostname = (urlparse(entity.entity).hostname or "").lower()
+            except Exception:
+                hostname = ""
+
+            if hostname:
+                try:
+                    ipaddress.ip_address(hostname)
+                    ip_entity = by_value.get(hostname)
+                    if ip_entity and ip_entity.kind == "ip":
+                        parts.append(
+                            f"ip={hostname}: {SemanticAnalyzer._format_ti_fact(ip_entity)}"
+                        )
+                        covered.add(hostname)
+                except ValueError:
+                    domain_entity = by_value.get(hostname)
+                    if domain_entity and domain_entity.kind == "domain_or_url":
+                        parts.append(
+                            f"domain={hostname}: {SemanticAnalyzer._format_ti_fact(domain_entity)}"
+                        )
+                        covered.add(hostname)
+
+            lines.append(f"- {'; '.join(parts)}")
+
+        for entity in ti_entities:
+            if entity.entity in covered:
+                continue
+            kind = "ip" if entity.kind == "ip" else "domain"
+            lines.append(f"- {kind}={entity.entity}: {SemanticAnalyzer._format_ti_fact(entity)}")
+
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_ti_fact(entity: TIEntityResult) -> str:
+        parts = [f"risk={entity.risk}"]
+        family_names: list[str] = []
+        for tag in entity.tags:
+            for family in tag.get("malicious_family", []):
+                name = family.get("name")
+                if name:
+                    family_names.append(name)
+        if family_names:
+            parts.append(f"families={', '.join(family_names)}")
+        if entity.decoded_from:
+            parts.append("decoded_from=base64")
+        return "; ".join(parts)
 
     async def _call_llm(self, prompt: str) -> dict[str, Any]:
         response = await self._client.chat.completions.create(

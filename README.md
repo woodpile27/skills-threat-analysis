@@ -129,7 +129,7 @@ pip install -e .
 ### As CLI
 
 ```bash
-# Default: Stage 1 on all skills; Stage 2 (LLM) only for skills where Stage 1 is not CLEAN
+# Default: Stage 1 on all skills; Stage 2 (LLM) only for skills with Stage 1 findings or non-clean TI results
 python -m scanner.cli --path ./skills/ --output ./report/
 
 # Stage 1 + LLM on every skill (previous default behavior; requires API key up front)
@@ -169,7 +169,7 @@ python -m scanner.cli --path ./skills/ -v
 |--------|---------|-------------|
 | `--path` | `./skills` | Directory containing skill files |
 | `--output` | `./report` | Report output directory |
-| `--stage` | `full` | `1` (rules only), `2` (LLM only), `full` (rules then LLM only if not CLEAN), `full-llm` (rules then LLM for every skill) |
+| `--stage` | `full` | `1` (rules only), `2` (LLM only), `full` (rules then LLM when Stage 1 has findings or TI is not CLEAN), `full-llm` (rules then LLM for every skill) |
 | `--severity` | `all` | Minimum severity: `critical`, `high`, `medium`, `all` |
 | `--format` | `both` | Output format: `json`, `md`, `both` |
 | `--batch-size` | `5` | Skills per LLM batch in Stage 2 |
@@ -184,7 +184,7 @@ python -m scanner.cli --path ./skills/ -v
 | `--verbose` / `-v` | — | Shorthand for `--log-level DEBUG` |
 | `--report-all-skills` | — | Output per-skill report for every skill: skills with findings → `threats/`, clean skills → `clean/` (default: only skills with findings get `threats/<id>.json`) |
 
-**`--stage` behavior change:** Older releases treated `full` as “run LLM on every skill.” The default `full` now runs Stage 2 only when Stage 1 is not `CLEAN`. To restore the old behavior, use `--stage full-llm` (or set `scan.stage: full-llm` in the worker config).
+**`--stage` behavior change:** Older releases treated `full` as “run LLM on every skill.” The default `full` now runs Stage 2 only when Stage 1 has findings or TI is not `CLEAN`. To restore the old behavior, use `--stage full-llm` (or set `scan.stage: full-llm` in the worker config).
 
 ## Output
 
@@ -324,7 +324,7 @@ Key sections in `config.yaml`:
 | `mongodb` | `database` | Database name |
 | `mongodb` | `tasks_collection` | Collection for task status tracking |
 | `mongodb` | `reports_collection` | Collection for scan reports |
-| `scan` | `stage` | `full` (conditional LLM), `full-llm` (LLM on every skill), `1`, or `2` |
+| `scan` | `stage` | `full` (LLM when Stage 1 has findings or TI is not CLEAN), `full-llm` (LLM on every skill), `1`, or `2` |
 | `scan` | `model`, `api_base`, `api_key_env` | LLM settings for Stage 2 |
 | `scan` | `enable_qax_ti`, `ti_api_key` | Enable Stage TI and provide QAX TI API key |
 

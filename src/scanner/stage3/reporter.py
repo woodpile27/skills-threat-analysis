@@ -24,8 +24,6 @@ from scanner.models import (
     ScanSummary,
     Severity,
     SkillFile,
-    StageTIResult,
-    TIEntityResult,
     Verdict,
 )
 
@@ -566,12 +564,9 @@ class Reporter:
                     encoding="utf-8",
                 )
 
-    def _build_skill_report(self, r: ScanResult, scan_id: str) -> dict[str, Any]:
-        """Build a single-skill report conforming to the QAX schema."""
-        now = datetime.now(timezone.utc)
+    def _build_findings(self, r: ScanResult) -> list[dict[str, Any]]:
+        """Build combined findings from static, TI, and LLM stages."""
         content = r.skill.content
-
-        # Build findings from both stages
         findings: list[dict[str, Any]] = []
         entry_file_path = _resolve_entry_file_path(r.skill)
 
@@ -780,6 +775,12 @@ class Reporter:
                 Severity(f["severity"].lower()), 0
             )
         )
+        return findings
+
+    def _build_skill_report(self, r: ScanResult, scan_id: str) -> dict[str, Any]:
+        """Build a single-skill report conforming to the QAX schema."""
+        now = datetime.now(timezone.utc)
+        findings = self._build_findings(r)
 
         # --- Verdict ---
         verdict_obj = self._compute_verdict(r, findings)
@@ -859,9 +860,6 @@ class Reporter:
         total_ms = (r.stage1.duration_ms if r.stage1 else 0) + \
                    (r.stage_ti.duration_ms if r.stage_ti else 0) + \
                    (r.stage2.duration_ms if r.stage2 else 0)
-
-        # --- Determine which analyzers were used ---
-        analyzers_used = list(analyzer_results.keys())
 
         meta = _parse_frontmatter(r.skill.content)
         raw_name = meta.get("name")
@@ -974,18 +972,20 @@ class Reporter:
                 has_llm_verdict = False
 
         if not has_llm_verdict:
-            # Use final_verdict (incorporates TI de-escalation) when available
-            result = r.final_verdict
-            if result == Verdict.MALICIOUS:
+            if critical >= 1:
+                result = Verdict.MALICIOUS
                 action = RecommendedAction.BLOCK
                 confidence = max(0.8, r.stage2.confidence if r.stage2 else 0.8)
-            elif result == Verdict.SUSPICIOUS:
+            elif high >= 1 or total >= 3:
                 action = RecommendedAction.REVIEW
                 confidence = r.stage2.confidence if r.stage2 else 0.6
-            elif result == Verdict.CLEAN and total > 0:
+                result = Verdict.SUSPICIOUS
+            elif total > 0:
                 action = RecommendedAction.REVIEW
-                confidence = 0.6
+                confidence = r.stage2.confidence if r.stage2 else 0.4
+                result = Verdict.SUSPICIOUS
             else:
+                result = Verdict.CLEAN
                 action = RecommendedAction.ALLOW
                 confidence = 1.0
 
@@ -1109,7 +1109,9 @@ class Reporter:
         malicious_skills: list[str] = []
 
         for r in results:
-            v = r.final_verdict
+            findings = self._build_findings(r)
+            verdict_obj = self._compute_verdict(r, findings)
+            v = Verdict[verdict_obj["result"]]
             skill_path = r.skill.file_path
             if v == Verdict.CLEAN:
                 clean += 1
@@ -1250,12 +1252,19 @@ class Reporter:
             )
 
         # Top 20 high-risk skills
+        report_views = []
+        for r in results:
+            findings = self._build_findings(r)
+            report_views.append((r, findings, self._compute_verdict(r, findings)))
         high_risk = sorted(
-            [r for r in results if r.final_verdict in (
-                Verdict.MALICIOUS, Verdict.SUSPICIOUS)],
-            key=lambda r: (
-                0 if r.final_verdict == Verdict.MALICIOUS else 1,
-                -(r.stage2.confidence if r.stage2 else 0),
+            [
+                (r, findings, verdict_obj)
+                for r, findings, verdict_obj in report_views
+                if verdict_obj["result"] in ("MALICIOUS", "SUSPICIOUS")
+            ],
+            key=lambda item: (
+                0 if item[2]["result"] == "MALICIOUS" else 1,
+                -item[2]["confidence"],
             ),
         )[:20]
 
@@ -1267,11 +1276,15 @@ class Reporter:
                 "| # | Skill ID | Source | Verdict | Confidence | Top Threat |",
                 "|---|----------|--------|---------|------------|------------|",
             ]
-            for i, r in enumerate(high_risk, 1):
-                conf = f"{r.stage2.confidence:.2f}" if r.stage2 else "N/A"
-                top_threat = r.stage2.threats[0].category.value if r.stage2 and r.stage2.threats else "-"
+            for i, (r, findings, verdict_obj) in enumerate(high_risk, 1):
+                conf = f"{verdict_obj['confidence']:.2f}"
+                top_threat = (
+                    r.stage2.threats[0].category.value
+                    if r.stage2 and r.stage2.threats
+                    else (findings[0]["category"] if findings else "-")
+                )
                 lines.append(
-                    f"| {i} | {r.skill.id} | {r.skill.source} | {r.final_verdict.value} | {conf} | {top_threat} |"
+                    f"| {i} | {r.skill.id} | {r.skill.source} | {verdict_obj['result'].lower()} | {conf} | {top_threat} |"
                 )
 
         path = self._output_dir / "summary.md"

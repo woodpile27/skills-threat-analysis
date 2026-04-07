@@ -32,7 +32,7 @@ class MongoConfig:
 
 @dataclass
 class ScanConfig:
-    # "1" rules only; "full" rules then LLM only if rules are not CLEAN;
+    # "1" rules only; "full" rules then LLM when Stage 1 has findings or TI is not CLEAN;
     # "full-llm" rules then LLM for every skill; "2" always run LLM after rules (worker still runs stage1 first).
     stage: str = "full"
     model: str | None = None

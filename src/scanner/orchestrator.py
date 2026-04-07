@@ -14,6 +14,7 @@ from scanner.stage1.engine import RuleEngine
 from scanner.stage2.analyzer import SemanticAnalyzer
 from scanner.stage3.reporter import Reporter
 from scanner.stage_ti.analyzer import TIAnalyzer
+from scanner.pipeline_policy import should_run_stage2_in_full_mode
 from scanner.verdict_merge import apply_ti_deescalation
 
 logger = logging.getLogger(__name__)
@@ -113,13 +114,12 @@ class Orchestrator:
 
             if self._stage == "full":
                 needs_llm = any(
-                    (r.stage1 and r.stage1.verdict != Verdict.CLEAN)
-                    or (r.stage_ti and r.stage_ti.verdict != Verdict.CLEAN)
+                    should_run_stage2_in_full_mode(r)
                     for r in stage1_results
                 )
                 if not needs_llm:
                     logger.info(
-                        "Stage 2 skipped: all skills CLEAN in Stage 1. Report at %s",
+                        "Stage 2 skipped: no skills have Stage 1 findings or non-clean TI results. Report at %s",
                         self._output_dir,
                     )
                     results = stage1_results
@@ -133,7 +133,7 @@ class Orchestrator:
                 api_key = os.environ.get(self._api_key_env)
                 if not api_key:
                     logger.error(
-                        "%s not set. Stage 2 requires an API key for non-CLEAN skills. "
+                        "%s not set. Stage 2 requires an API key for skills with Stage 1 findings or non-clean TI results. "
                         "Use --stage 1 to run rules-only scan, or set the environment variable.",
                         self._api_key_env,
                     )
@@ -212,8 +212,7 @@ class Orchestrator:
         elif self._stage == "full":
             to_analyze = [
                 r for r in stage1_results
-                if (r.stage1 and r.stage1.verdict != Verdict.CLEAN)
-                or (r.stage_ti and r.stage_ti.verdict != Verdict.CLEAN)
+                if should_run_stage2_in_full_mode(r)
             ]
         else:
             to_analyze = []

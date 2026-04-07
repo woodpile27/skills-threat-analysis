@@ -324,7 +324,7 @@ python -m scanner.cli [options]
 |------|--------|------|
 | `--path <dir>` | `./skills` | 待扫描的 skill 文件目录 |
 | `--output <dir>` | `./report` | 报告输出目录 |
-| `--stage <1\|2\|full\|full-llm>` | `full` | `1` 仅规则；`2` 仅 LLM；`full` 规则后对非 CLEAN 才 LLM；`full-llm` 规则后全量 LLM |
+| `--stage <1\|2\|full\|full-llm>` | `full` | `1` 仅规则；`2` 仅 LLM；`full` 规则后仅对 Stage 1 有 findings 或 TI 非 CLEAN 的 skill 跑 LLM；`full-llm` 规则后全量 LLM |
 | `--severity <level>` | `all` | 最低报告严重级别 |
 | `--format <type>` | `both` | 输出格式：json / md / both |
 | `--batch-size <n>` | `5` | Stage 2 每批分析数量 |

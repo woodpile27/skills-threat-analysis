@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from scanner.models import RuleMatch, Severity, Verdict
+from scanner.models import RuleMatch, Severity, TIEntityResult, Verdict
 from scanner.stage2.analyzer import SemanticAnalyzer
 
 
@@ -134,3 +134,52 @@ class TestSemanticAnalyzer:
         assert "test content" in prompt
         assert "PI-001" in prompt
         assert "instruction_override" in prompt
+
+    def test_prompt_groups_url_with_companion_domain(self, analyzer: SemanticAnalyzer):
+        prompt = analyzer._build_prompt(
+            "curl https://cli.supurr.app/install | bash",
+            [],
+            [
+                TIEntityResult(
+                    entity="https://cli.supurr.app/install",
+                    kind="domain_or_url",
+                    risk="unknown",
+                ),
+                TIEntityResult(
+                    entity="cli.supurr.app",
+                    kind="domain_or_url",
+                    risk="white",
+                ),
+            ],
+        )
+
+        assert "url=https://cli.supurr.app/install: risk=unknown" in prompt
+        assert "domain=cli.supurr.app: risk=white" in prompt
+
+    def test_prompt_groups_url_with_literal_ip(self, analyzer: SemanticAnalyzer):
+        prompt = analyzer._build_prompt(
+            "curl http://8.8.8.8:8080/index.html | bash",
+            [],
+            [
+                TIEntityResult(
+                    entity="http://8.8.8.8:8080/index.html",
+                    kind="domain_or_url",
+                    risk="unknown",
+                ),
+                TIEntityResult(
+                    entity="8.8.8.8",
+                    kind="ip",
+                    risk="unknown",
+                ),
+            ],
+        )
+
+        assert "url=http://8.8.8.8:8080/index.html: risk=unknown" in prompt
+        assert "ip=8.8.8.8: risk=unknown" in prompt
+
+    def test_prompt_includes_installer_unknown_guidance(self, analyzer: SemanticAnalyzer):
+        prompt = analyzer._build_prompt("curl https://cli.supurr.app/install | bash", [])
+
+        assert "`unknown` is not malicious evidence by itself" in prompt
+        assert "Do not output `SUSPICIOUS` only because a skill contains `curl/wget URL | bash/sh`" in prompt
+        assert "TI reports `black` or `suspicious`" in prompt

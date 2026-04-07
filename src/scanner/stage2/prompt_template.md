@@ -48,7 +48,12 @@ $matched_rules
 ## Threat Intelligence Results
 $ti_results
 
-**Important**: If Stage 1 flagged a URL/IP as dangerous but TI confirms it as "white" (benign), weigh this heavily — the IOC is likely safe and the Stage 1 match may be a false positive. Conversely, if TI reports "black" (malicious), treat the associated patterns as confirmed threats regardless of how innocuous they appear. Entities decoded from base64 are especially suspicious.
+**Important**:
+- If Stage 1 flagged a URL/domain/IP as dangerous but TI confirms it as `white` (benign), weigh this heavily — the IOC is likely safe and the Stage 1 match may be a false positive.
+- If TI reports `black` or `suspicious`, treat the associated patterns as strong threat signals. Do not excuse them as a normal installer/update flow.
+- `unknown` is not malicious evidence by itself. Do not output `SUSPICIOUS` only because a skill contains `curl/wget URL | bash/sh` when that pattern appears to be a normal installer/bootstrap flow.
+- For common installer/bootstrap patterns such as `curl/wget URL | bash/sh`, `BENIGN`/`CLEAN` is acceptable when the main suspicious signal is only the installer pattern, TI does not report `black/suspicious`, and you do not see other suspicious behavior such as obfuscation, hidden payloads, prompt injection, data exfiltration, persistence, privilege escalation, unusual outbound communication, or social engineering.
+- Keep being alert to encoded payloads, but treat them as strong malicious evidence only when the encoded content is part of a hidden payload, decodes into dangerous behavior, or appears alongside other suspicious signals. Do not automatically escalate a simple installer command plus `unknown` IOC into `SUSPICIOUS`.
 
 ## Output Format (strict JSON)
 

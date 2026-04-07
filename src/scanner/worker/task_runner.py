@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from scanner.models import AnalyzerStatus, ScanResult, Verdict
+from scanner.pipeline_policy import should_run_stage2_in_full_mode
 from scanner.stage1.engine import RuleEngine
 from scanner.stage2.analyzer import SemanticAnalyzer
 from scanner.stage3.reporter import Reporter
@@ -129,11 +130,7 @@ class TaskRunner:
         elif st in ("full-llm", "2"):
             want_stage2 = True
         elif st == "full":
-            want_stage2 = (
-                stage1.verdict != Verdict.CLEAN
-                or (result.stage_ti is not None
-                    and result.stage_ti.verdict != Verdict.CLEAN)
-            )
+            want_stage2 = should_run_stage2_in_full_mode(result)
         else:
             want_stage2 = False
 

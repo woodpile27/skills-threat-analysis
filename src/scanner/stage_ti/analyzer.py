@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import time
 from typing import Any
+from urllib.parse import urlparse
 
 from scanner.ioc.extractor import extract_entities
 from scanner.models import (
@@ -100,6 +102,47 @@ def _extract_entities_from_findings(
     return results
 
 
+def _expand_url_companion_entities(
+    raw_entities: list[tuple[str, str, str, int, int, str]],
+) -> list[tuple[str, str, str, int, int, str]]:
+    """Add companion domain entities for URL IOCs.
+
+    For URLs whose hostname is a domain, synthesize a companion
+    ``domain_or_url`` entity for that hostname so TI can evaluate both the full
+    URL and the host reputation. If the hostname is already a literal IP, rely
+    on the extractor's standalone IP entity instead of duplicating it here.
+    """
+    expanded = list(raw_entities)
+    seen = {(kind, value) for kind, value, *_ in raw_entities}
+
+    for kind, value, source_file, start, end, decoded_from in raw_entities:
+        if kind != "domain_or_url" or "://" not in value:
+            continue
+
+        try:
+            hostname = (urlparse(value).hostname or "").lower()
+        except Exception:
+            continue
+        if not hostname:
+            continue
+
+        try:
+            ipaddress.ip_address(hostname)
+            continue
+        except ValueError:
+            pass
+
+        key = ("domain_or_url", hostname)
+        if key in seen:
+            continue
+        seen.add(key)
+        expanded.append(
+            ("domain_or_url", hostname, source_file, start, end, decoded_from)
+        )
+
+    return expanded
+
+
 class TIAnalyzer:
     """Extract IOCs from skill content and query QAX TI for reputation."""
 
@@ -147,6 +190,7 @@ class TIAnalyzer:
         raw_entities = (
             _extract_entities_from_findings(stage1, skill) if stage1 else []
         )
+        raw_entities = _expand_url_companion_entities(raw_entities)
 
         if not raw_entities:
             duration_ms = int((time.monotonic() - t0) * 1000)
@@ -163,7 +207,7 @@ class TIAnalyzer:
         entity_meta: dict[str, tuple[str, int, int, str]] = {}  # value -> (source_file, start, end, decoded_from)
 
         for kind, value, source_file, start, end, decoded_from in raw_entities:
-            entity_meta[value] = (source_file, start, end, decoded_from)
+            entity_meta.setdefault(value, (source_file, start, end, decoded_from))
             if kind == "ip":
                 ips.append(value)
             else:

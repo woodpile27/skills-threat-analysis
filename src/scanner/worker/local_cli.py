@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from scanner.models import AnalyzerStatus, ScanResult, Verdict
+from scanner.pipeline_policy import should_run_stage2_in_full_mode
 from scanner.stage1.engine import RuleEngine
 from scanner.stage2.analyzer import SemanticAnalyzer
 from scanner.stage3.reporter import Reporter
@@ -130,11 +131,7 @@ def _scan_single_skill(skill_zip: Path, scan_cfg: ScanConfig, enable_llm: bool) 
     elif st in ("full-llm", "2"):
         want_stage2 = True
     elif st == "full":
-        want_stage2 = (
-            result.stage1.verdict != Verdict.CLEAN
-            or (result.stage_ti is not None
-                and result.stage_ti.verdict != Verdict.CLEAN)
-        )
+        want_stage2 = should_run_stage2_in_full_mode(result)
     else:
         want_stage2 = False
 
@@ -192,8 +189,7 @@ async def _run_stage2_batch(
     elif st == "full":
         to_analyze = [
             r for r in results
-            if (r.stage1 and r.stage1.verdict != Verdict.CLEAN)
-            or (r.stage_ti and r.stage_ti.verdict != Verdict.CLEAN)
+            if should_run_stage2_in_full_mode(r)
         ]
     else:  # "full-llm" or "2"
         to_analyze = results
@@ -288,11 +284,10 @@ def _scan_all_zips(
     if will_run_s2 and api_key:
         if scan_cfg.stage in ("full-llm", "2"):
             stage1_only: list[ScanResult] = []
-        else:  # "full": only CLEAN skills (both stage1 and stage_ti) skip Stage 2
+        else:  # "full": only no-finding / TI-clean skills skip Stage 2
             stage1_only = [
                 r for r in results
-                if (r.stage1 and r.stage1.verdict == Verdict.CLEAN)
-                and (r.stage_ti is None or r.stage_ti.verdict == Verdict.CLEAN)
+                if not should_run_stage2_in_full_mode(r)
             ]
     else:
         # Stage 2 won't run at all — every skill stays at Stage 1.
