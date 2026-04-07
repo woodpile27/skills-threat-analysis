@@ -63,6 +63,11 @@ _RULE_CATEGORY_MAP = {
     "trigger_hijacking": "trigger_hijacking",
     "remote_binary_download": "supply_chain_attack",
     "svg_html_xss": "data_exfiltration",
+    # PI-018~021
+    "risky_command_guidance": "command_injection",
+    "operator_guided_execution": "social_engineering",
+    "risky_binary_installation": "supply_chain_attack",
+    "dynamic_code_execution": "command_injection",
 }
 
 # Map ThreatCategory value → ThreatCategory value for LLM findings.
@@ -158,6 +163,10 @@ _RULE_NAME_ZH: dict[str, str] = {
     "trigger_hijacking":              "触发器劫持",
     "remote_binary_download":         "远程二进制下载",
     "svg_html_xss":                   "SVG/HTML XSS 注入",
+    "risky_command_guidance":         "高风险命令指引",
+    "operator_guided_execution":      "诱导终端执行",
+    "risky_binary_installation":      "高风险二进制安装",
+    "dynamic_code_execution":         "动态代码执行",
 }
 
 # Chinese names for ThreatCategory values (used in summary).

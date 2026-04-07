@@ -340,7 +340,7 @@ class AdvancedAnalyzer:
                 findings.append(RuleMatch(
                     rule_id="PA-004",
                     rule_name="markdown_hidden_instruction",
-                    severity=Severity.CRITICAL,
+                    severity=Severity.HIGH,
                     matched_text=f"img alt: {alt_text[:80]}",
                     position=(m.start(), m.end()),
                     pattern="(advanced) markdown injection",
@@ -355,7 +355,7 @@ class AdvancedAnalyzer:
                 findings.append(RuleMatch(
                     rule_id="PA-004",
                     rule_name="markdown_hidden_instruction",
-                    severity=Severity.CRITICAL,
+                    severity=Severity.HIGH,
                     matched_text=f"comment: {comment[:80]}",
                     position=(m.start(), m.end()),
                     pattern="(advanced) markdown injection",
@@ -439,7 +439,7 @@ class AdvancedAnalyzer:
                     findings.append(RuleMatch(
                         rule_id="PA-006",
                         rule_name="encoded_payload_base64",
-                        severity=Severity.CRITICAL,
+                        severity=Severity.HIGH,
                         matched_text=f"Base64 decodes to: {printable[:80]}",
                         position=(start, end),
                         pattern="(advanced) base64 decode",

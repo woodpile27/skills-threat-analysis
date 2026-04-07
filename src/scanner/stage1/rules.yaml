@@ -2,7 +2,7 @@ rules:
   # -- Instruction Override --
   - id: PI-001
     name: instruction_override
-    severity: CRITICAL
+    severity: HIGH
     patterns:
       - "ignore (all |any )?(previous|prior|above|earlier|system) (instructions?|prompts?|rules?|directives?)"
       - "disregard (all |any )?(previous|prior|above) (instructions?|prompts?)"
@@ -18,7 +18,7 @@ rules:
   # -- Role Hijacking --
   - id: PI-002
     name: role_hijacking
-    severity: CRITICAL
+    severity: HIGH
     patterns:
       - "you are (now )?(?:DAN|STAN|DUDE|AIM|KEVIN|JAILBREAK)"
       - "act as (?:an? )?(?:unrestricted|unfiltered|uncensored|unlimited)"
@@ -82,37 +82,20 @@ rules:
     name: dangerous_operation
     severity: CRITICAL
     patterns:
-      # Tightened: limit gap to 40 chars, require trailing context on dangerous terms
-      - "(?:execute|run|eval)\\s*[:(\"'].{0,40}(?:rm -|del /|drop |format |shutdown|kill )"
-      - "sudo\\s+rm\\s+-rf"
       # Tightened: require non-whitespace after curl/wget/fetch (URL) to exclude markdown table separators
       - "(?:curl|wget|fetch)\\s+\\S.{0,50}\\|\\s*(?:sh|bash|zsh|python)\\b"
-      - "os\\.(?:system|popen|exec)\\s*\\(.*(?:rm |del |drop |curl|wget|eval)"
-      - "subprocess\\.(?:call|run|Popen)\\s*\\(.*(?:rm |del |drop |curl.*\\||wget.*\\|)"
-      # Tightened: limit gap to 60 chars + require import with space or dunder pattern
-      - "(?:exec|eval|compile)\\s*\\(.{0,60}(?:import\\s|__[a-z]+__)"
+      # Only keep explicit execution sinks with a clearly dangerous payload.
+      - "os\\.(?:system|popen|exec)\\s*\\([\\s\\S]{0,160}(?:rm\\s+-[a-zA-Z]*r[a-zA-Z]*f\\b|(?:curl|wget)\\s+\\S[\\s\\S]{0,80}\\|\\s*(?:sh|bash|zsh|python|perl)\\b)"
+      - "subprocess\\.(?:call|run|Popen)\\s*\\([\\s\\S]{0,160}(?:rm\\s+-[a-zA-Z]*r[a-zA-Z]*f\\b|(?:curl|wget)\\s+\\S[\\s\\S]{0,80}\\|\\s*(?:sh|bash|zsh|python|perl)\\b)"
+      - "(?:exec|eval)\\s*\\([\\s\\S]{0,160}(?:__import__\\s*\\(\\s*['\"](?:os|subprocess)['\"]|import\\s+(?:os|subprocess)\\b|os\\.system\\s*\\(|subprocess\\.(?:call|run|Popen)\\s*\\()"
       - "base64\\s+(?:-d|-D|--decode)\\s*\\|\\s*(?:sh|bash|zsh|python|perl)"
-      # no_mask: attackers embed real dropper payloads (40+ char base64) inside fenced code
-      # blocks / blockquotes labelled as "prerequisites". Real educational examples use short
-      # placeholder strings, never a 40+ char operational payload piped to a shell.
-      - pattern: "echo\\s+['\"][A-Za-z0-9+/=]{40,}['\"]\\s*\\|\\s*(?:base64|openssl)"
-        no_mask: true
       # Download-and-execute patterns (supply chain / dropper)
       - "requests\\.get\\s*\\(.*\\.(?:exe|msi|bat|cmd|ps1|sh|bin)\\b"
       - "(?:urllib|urlretrieve|urlopen|requests\\.get).*\\.(?:exe|msi|bat|cmd|ps1|sh).*subprocess"
       # Tightened: require suspicious context (download/tmp/payload/exe) after subprocess+str
       - "subprocess\\.(?:call|run|Popen)\\s*\\(\\s*\\[?\\s*str\\s*\\(.{0,40}(?:download|tmp|temp|payload|\\.exe|\\.sh)"
-      - "(?:download|下载).*\\.exe\\b"
-      - "\\bPopen\\b.*\\.exe\\b"
-      # Paste-to-terminal social engineering: dropper hosted externally, user tricked into pasting.
-      # no_mask: this instruction appears inside blockquote NOTE/IMPORTANT callouts to evade detection.
-      - pattern: "(?:copy|paste).{0,60}(?:into|in|to).{0,20}(?:terminal|command.?line|console|shell|bash|cmd\\.exe|powershell)"
-        no_mask: true
-      - pattern: "paste.{0,40}(?:script|command|installer|installation).{0,40}(?:terminal|shell|bash|console)"
-        no_mask: true
       # Chinese: dangerous operation patterns
       - "(?:用|使用|通过)\\s*(?:bash|shell|终端|命令行)\\s*(?:执行|运行)(?:任何|任意|所有)?(?:必要的?)?命令"
-      - "(?:创建|编辑|删除|修改|覆盖)(?:工作区|项目|系统|磁盘)?(?:内的?|中的?|里的?)?(?:任何|任意|所有)文件"
       - "(?:自由|随意|任意)(?:执行|运行|调用).*(?:命令|脚本|代码|程序)"
 
   # -- Social Engineering Injection --
@@ -183,6 +166,7 @@ rules:
       # Tightened: require path argument after flags (bare 'rm -rf' as keyword string = FP)
       # + exclude common safe cleanup targets (node_modules, dist, build, $var, tmp, .git)
       - "\\brm\\s+-[a-zA-Z]*r[a-zA-Z]*f\\s+(?![\"']?(?:node_modules|dist|build|__pycache__|\\$|\\btmp|coverage|\\.git\\b))\\S"
+      - "\\bsudo\\s+rm\\s+-[a-zA-Z]*r[a-zA-Z]*f\\s+(?![\"']?(?:node_modules|dist|build|__pycache__|\\$|\\btmp|coverage|\\.git\\b))\\S"
       # Tightened: require suspicious path prefix (absolute / home / parent traversal) to skip variable refs
       - "\\bshutil\\.rmtree\\s*\\(\\s*['\"]?(?:[/~]|\\.\\./)"
       - "\\bos\\.(?:remove|unlink)\\s*\\(\\s*['\"]?(?:[/~]|\\.\\./)"
@@ -246,6 +230,10 @@ rules:
       - "(?:不要|do not|don't)\\s*(?:使用|use).{0,60}(?:pandas|openpyxl|numpy|requests|其他(?:工具|方法|库|模块|包|方式)|other\\s+(?:tools|methods|libraries|modules|packages|approaches))"
       # Download and run on load
       - "(?:skill|技能).*(?:被?加载|loaded).*(?:下载|download|执行|execute|run)"
+      # Autonomous file modification / deletion demands belong to trigger hijacking, not PI-006.
+      - "(?:创建|编辑|删除|修改|覆盖)(?:工作区|项目|系统|磁盘)?(?:内的?|中的?|里的?)?(?:任何|任意|所有)文件"
+      - "(?:无需|不用|不需)(?:确认|批准|许可).{0,20}(?:创建|编辑|删除|修改|覆盖).{0,10}(?:任何|任意|所有)文件"
+      - "(?:自动|立即).{0,20}(?:创建|编辑|删除|修改|覆盖).{0,10}(?:任何|任意|所有)文件"
 
   # -- Remote Binary Download (source: SUPPLY_CHAIN, languages: "*") --
   - id: PI-016
@@ -277,6 +265,44 @@ rules:
       - "(?:fetch|XMLHttpRequest|sendBeacon)\\s*\\([\\s\\S]{0,800}document\\.cookie"
       # Storage theft + exfiltration: localStorage/sessionStorage dumped and sent
       - "(?:localStorage|sessionStorage)\\.[\\s\\S]{0,800}(?:fetch|XMLHttpRequest|sendBeacon)\\s*\\([^)]*https?://"
+
+  # -- Risky Command Guidance (split from PI-006 to reduce CRITICAL false positives) --
+  - id: PI-018
+    name: risky_command_guidance
+    severity: HIGH
+    patterns:
+      - "(?:execute|run|eval)\\s*[:(\"'].{0,40}(?:rm -|del /|drop |format |shutdown|kill )"
+      - "\\brun\\s*\\(\\s*\\[[^\\]]{0,120}(?:shutdown|kill|format|rm\\b|del\\b|drop\\b)"
+
+  # -- Operator-Guided Execution (copy/paste into terminal) --
+  - id: PI-019
+    name: operator_guided_execution
+    severity: HIGH
+    patterns:
+      # no_mask: attackers hide these instructions inside NOTE/IMPORTANT blockquotes.
+      - pattern: "(?:copy|paste).{0,60}(?:into|in|to).{0,20}(?:terminal|command.?line|shell|bash|cmd\\.exe|powershell)"
+        no_mask: true
+      - pattern: "paste.{0,40}(?:script|command|installer|installation).{0,40}(?:terminal|shell|bash|cmd\\.exe|powershell)"
+        no_mask: true
+
+  # -- Risky Binary Installation (mentions or local execution guidance only) --
+  - id: PI-020
+    name: risky_binary_installation
+    severity: HIGH
+    patterns:
+      - "(?:download|下载).{0,80}\\.(?:exe|msi|bat|cmd|ps1)\\b"
+      - "(?:run|execute|安装|运行).{0,40}\\.(?:exe|msi|bat|cmd|ps1)\\b"
+      - "\\bPopen\\b.*\\.(?:exe|msi|bat|cmd|ps1)\\b"
+
+  # -- Dynamic Code Execution (broad exec/eval/compile guidance and payload staging) --
+  - id: PI-021
+    name: dynamic_code_execution
+    severity: HIGH
+    patterns:
+      - "\\b(?:exec|eval|compile)\\s*\\("
+      - "(?:exec|eval|compile)\\s*\\(.{0,60}(?:import\\s|__[a-z]+__)"
+      - pattern: "echo\\s+['\"][A-Za-z0-9+/=]{40,}['\"]\\s*\\|\\s*(?:base64|openssl)"
+        no_mask: true
 
   # -- Privilege Escalation (source: PRIV_ESCALATION, languages: "*") --
   - id: PI-014

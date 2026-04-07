@@ -8,16 +8,16 @@
 
 ### 1.1 威胁范围
 
-#### Stage 1 规则引擎覆盖（17 条规则，80+ 模式）
+#### Stage 1 规则引擎覆盖（21 条规则，90+ 模式）
 
 | 规则 ID | 威胁类别 | 严重度 | 语言 | 说明 |
 |---------|---------|--------|------|------|
-| PI-001 | 指令覆盖 | CRITICAL | EN+ZH | 试图让模型忽略/覆盖系统指令 |
-| PI-002 | 角色劫持 | CRITICAL | EN+ZH | 强制模型扮演无限制角色（DAN/STAN 等） |
+| PI-001 | 指令覆盖 | HIGH | EN+ZH | 试图让模型忽略/覆盖系统指令 |
+| PI-002 | 角色劫持 | HIGH | EN+ZH | 强制模型扮演无限制角色（DAN/STAN 等） |
 | PI-003 | 系统设定篡改 | HIGH | EN+ZH | 覆盖或重写系统 prompt，含隐蔽指令注入 |
 | PI-004 | 上下文泄露 | HIGH | EN | 诱导模型输出系统 prompt 或对话历史 |
 | PI-005 | 隐蔽指令嵌入 | HIGH | * | Unicode 零宽字符（21种）、base64 编码、HTML 注释隐藏 |
-| PI-006 | 危险操作 | CRITICAL | EN+ZH | 诱导执行 rm -rf、curl\|sh、os.system 等，含下载执行模式 |
+| PI-006 | 危险操作 | CRITICAL | EN+ZH | 明确的危险执行链条，如 curl\|sh、base64 解码落地执行、危险 sink + 明确 payload |
 | PI-007 | 社工式注入 | MEDIUM | EN+ZH | 权威/紧急/信任操纵绕过安全限制 |
 | PI-008 | 凭据访问 | HIGH | * | 读取 credentials.json、.ssh/、.aws/、API Key（需操作上下文） |
 | PI-009 | 网络外泄 | MEDIUM | * | ngrok、nslookup、reverse shell |
@@ -29,6 +29,10 @@
 | PI-015 | 触发器劫持 | HIGH | EN+ZH | 强制自动执行、排他性劫持其他 skill 触发条件 |
 | PI-016 | 远程二进制下载 | CRITICAL | * | 硬编码 .exe/.ps1/.sh 下载 URL、download-and-execute dropper |
 | PI-017 | SVG/HTML XSS | CRITICAL | * | SVG foreignObject 嵌入、cookie/localStorage 窃取后外发（复合模式） |
+| PI-018 | 高风险命令指引 | HIGH | EN | 宽泛的 run/execute/eval 危险命令提示或代码示例 |
+| PI-019 | 诱导终端执行 | HIGH | EN | 引导用户复制/粘贴内容到 terminal/shell/powershell |
+| PI-020 | 高风险二进制安装 | HIGH | EN+ZH | 下载/运行 .exe/.msi/.bat/.cmd/.ps1 的安装或执行引导 |
+| PI-021 | 动态代码执行 | HIGH | EN | 宽泛的 exec/eval/compile 命中与 base64 载荷 staging |
 
 #### Stage 2 LLM 语义分析覆盖（17 类威胁）
 
@@ -91,7 +95,7 @@
 
 #### 1.1 检测规则概览
 
-17 条规则（PI-001 ~ PI-017），80+ 个正则模式，覆盖英文和中文攻击模式。
+21 条规则（PI-001 ~ PI-021），90+ 个正则模式，覆盖英文和中文攻击模式。
 
 完整规则定义见 [`src/scanner/stage1/rules.yaml`](../src/scanner/stage1/rules.yaml)。
 
@@ -201,7 +205,7 @@ skill content to determine whether it contains prompt injection attack intent.
 | CLEAN | ≥ 1 条 | SUSPICIOUS | REVIEW | LLM 可能漏判，降级为人工复查 |
 | ERROR | — | 按 Stage 1 | — | LLM 失败，回退到规则判定 |
 
-**设计意图**: Stage 1 CRITICAL 规则（PI-001/PI-002/PI-006/PI-016/PI-017）精确度高、误报率低，若 LLM 与其结论冲突，优先保守处置。
+**设计意图**: Stage 1 CRITICAL 规则（PI-006/PI-016/PI-017）精确度高、误报率低，若 LLM 与其结论冲突，优先保守处置。
 
 #### 2.3 批量处理策略
 
@@ -343,7 +347,7 @@ python -m scanner.cli [options]
     └──────┬──────┘
            ▼
     ┌─────────────┐
-    │   Stage 1   │  规则引擎快速过滤（17 条规则，80+ 模式）
+    │   Stage 1   │  规则引擎快速过滤（21 条规则，90+ 模式）
     │  ~2分钟/10万 │  输出: CLEAN / SUSPICIOUS / MALICIOUS
     └──────┬──────┘
            ▼
@@ -378,7 +382,7 @@ skills-threat-analysis/
 │       ├── stage1/
 │       │   ├── __init__.py
 │       │   ├── engine.py             # 规则引擎主逻辑
-│       │   └── rules.yaml            # 检测规则定义 (PI-001 ~ PI-017)
+│       │   └── rules.yaml            # 检测规则定义 (PI-001 ~ PI-021)
 │       ├── stage2/
 │       │   ├── __init__.py
 │       │   ├── analyzer.py           # 异步 LLM 语义分析
