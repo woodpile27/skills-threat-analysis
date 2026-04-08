@@ -379,16 +379,9 @@ def _get_snippet(content: str, start: int, end: int) -> str:
     return content[line_start:line_end].strip()
 
 
-def _compute_files_hash(
-    file_hashes: dict[str, str], algo: str, package_hash: str = ""
-) -> str:
-    """Compute aggregate hash per spec §6.2-6.3.
-
-    Prepend package_hash (empty string for directory-loaded skills),
-    then sorted per-file hashes, then hash the concatenation.
-    """
-    parts = [package_hash] + [file_hashes[k] for k in sorted(file_hashes)]
-    combined = "".join(parts)
+def _compute_files_hash(file_hashes: dict[str, str], algo: str) -> str:
+    """Compute aggregate hash from per-file digests (paths sorted lexicographically)."""
+    combined = "".join(file_hashes[k] for k in sorted(file_hashes))
     if not combined:
         return ""
     if algo == "md5":
@@ -896,12 +889,12 @@ class Reporter:
                 "author": meta.get("author", ""),
                 "version": version_val,
                 "md5_info": {
-                    "files_md5": _compute_files_hash(r.skill.file_md5s, "md5", r.skill.package_md5),
+                    "files_md5": _compute_files_hash(r.skill.file_md5s, "md5"),
                     "package_md5": r.skill.package_md5,
                     "file_md5s": dict(r.skill.file_md5s),
                 },
                 "sha1_info": {
-                    "files_sha1": _compute_files_hash(r.skill.file_sha1s, "sha1", r.skill.package_sha1),
+                    "files_sha1": _compute_files_hash(r.skill.file_sha1s, "sha1"),
                     "package_sha1": r.skill.package_sha1,
                     "file_sha1s": dict(r.skill.file_sha1s),
                 },

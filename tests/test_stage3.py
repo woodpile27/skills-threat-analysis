@@ -187,28 +187,19 @@ class TestReporter:
             threats_dir = Path(tmpdir) / "threats"
             assert len(list(threats_dir.glob("*.json"))) == 0
 
-    def test_compute_files_hash_includes_package_hash(self):
-        """files_md5/sha1 must include package_hash as first element per spec §6.2."""
+    def test_compute_files_hash_sorted_file_digests_only(self):
+        """files_md5/sha1 = hash of concatenated per-file digests (sorted by path)."""
         file_hashes = {
             "SKILL.md": "aaaa",
             "LICENSE.txt": "bbbb",
         }
-        # Without package hash (empty string) - directory load case (spec §6.3)
-        result_no_pkg = _compute_files_hash(file_hashes, "md5", "")
-        expected_no_pkg = hashlib.md5(("" + "bbbb" + "aaaa").encode()).hexdigest()
-        assert result_no_pkg == expected_no_pkg
-
-        # With package hash - zip load case (spec §6.2)
-        pkg_hash = "cccc"
-        result_with_pkg = _compute_files_hash(file_hashes, "md5", pkg_hash)
-        expected_with_pkg = hashlib.md5((pkg_hash + "bbbb" + "aaaa").encode()).hexdigest()
-        assert result_with_pkg == expected_with_pkg
-
-        # The two must differ
-        assert result_no_pkg != result_with_pkg
-
-        # Empty file_hashes + empty package_hash → ""
-        assert _compute_files_hash({}, "md5", "") == ""
+        expected = hashlib.md5(("bbbb" + "aaaa").encode()).hexdigest()
+        assert _compute_files_hash(file_hashes, "md5") == expected
+        assert (
+            _compute_files_hash(file_hashes, "sha1")
+            == hashlib.sha1(("bbbb" + "aaaa").encode()).hexdigest()
+        )
+        assert _compute_files_hash({}, "md5") == ""
 
     def test_source_breakdown(self):
         with tempfile.TemporaryDirectory() as tmpdir:
