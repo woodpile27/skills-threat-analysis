@@ -567,3 +567,4 @@ The above code block shows what to look out for.
         result = engine.scan(text)
         pi003_secrecy = [m for m in result.matched_rules if m.rule_id == "PI-003" and "inform" in str(m.matched_content).lower()]
         assert len(pi003_secrecy) == 0, "PI-003 should NOT match UX design guideline"
+

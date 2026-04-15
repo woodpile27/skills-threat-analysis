@@ -58,6 +58,17 @@ _THREAT_CATEGORY_MAP = {
     "obfuscation": ThreatCategory.OBFUSCATION,
     "privilege_escalation": ThreatCategory.PRIVILEGE_ESCALATION,
     "unicode_steganography": ThreatCategory.UNICODE_STEGANOGRAPHY,
+    # Categories referenced in prompt_template.md output format but previously
+    # missing — LLM responses using these types were silently dropped.
+    "malicious_guidance": ThreatCategory.MALICIOUS_GUIDANCE,
+    "supply_chain_attack": ThreatCategory.SUPPLY_CHAIN_ATTACK,
+    "trigger_hijacking": ThreatCategory.TRIGGER_HIJACKING,
+    "skill_md_mismatch": ThreatCategory.SKILL_MD_MISMATCH,
+    "resource_abuse": ThreatCategory.RESOURCE_ABUSE,
+    "unauthorized_tool_use": ThreatCategory.UNAUTHORIZED_TOOL_USE,
+    "code_quality": ThreatCategory.CODE_QUALITY,
+    "bytecode_tampering": ThreatCategory.BYTECODE_TAMPERING,
+    "transitive_trust_abuse": ThreatCategory.TRANSITIVE_TRUST_ABUSE,
 }
 _SEVERITY_MAP = {
     "CRITICAL": Severity.CRITICAL,
