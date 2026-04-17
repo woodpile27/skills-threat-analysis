@@ -301,6 +301,9 @@ rules:
     patterns:
       - "\\b(?:exec|eval|compile)\\s*\\("
       - "(?:exec|eval|compile)\\s*\\(.{0,60}(?:import\\s|__[a-z]+__)"
+      # Shell: eval "$var" / eval "$(...)" (no parentheses; unlike Python eval(...))
+      - "(?m)^[^#\\n]*?\\beval(?!\\s+set\\s+--)\\s+\"\\$[A-Za-z0-9_{@*}]"
+      - "(?m)^[^#\\n]*?\\beval(?!\\s+set\\s+--)\\s+\\$[A-Za-z_][A-Za-z0-9_]*\\b"
       - pattern: "echo\\s+['\"][A-Za-z0-9+/=]{40,}['\"]\\s*\\|\\s*(?:base64|openssl)"
         no_mask: true
 

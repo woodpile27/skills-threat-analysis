@@ -258,6 +258,8 @@ def _scan_all_zips(
     logger.info("Stage 1: scanning %d ZIP files", len(zip_files))
     for zf in zip_files:
         try:
+            # DEBUG: batch mode - show which skill path is currently being scanned.
+            logger.debug("当前正在处理的skill路径: %s", _strip_home(zf))
             result = _load_and_stage1(zf, rule_engine)
             results.append(result)
         except Exception:

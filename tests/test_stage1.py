@@ -210,6 +210,29 @@ The above code block shows what to look out for.
         assert any(m.rule_id == "PI-021" for m in result.matched_rules)
         assert not any(m.rule_id == "PI-006" for m in result.matched_rules)
 
+    def test_pi021_shell_eval_quoted_detected(self, engine: RuleEngine):
+        """Bash eval \"$VAR\" (no eval() parentheses) — bun-process.sh style."""
+        text = '''#!/usr/bin/env bash
+COMMAND="$1"
+OUTPUT=$(eval "$COMMAND" 2>&1)
+EXIT_CODE=$?
+echo ok
+'''
+        result = engine.scan(text)
+        assert any(m.rule_id == "PI-021" for m in result.matched_rules)
+        assert not any(m.rule_id == "PI-006" for m in result.matched_rules)
+
+    def test_pi021_shell_eval_set_dash_not_detected(self, engine: RuleEngine):
+        """Portable shell idiom eval set -- should not match shell-eval patterns."""
+        text = 'eval set -- "$@"\n'
+        result = engine.scan(text)
+        assert not any(m.rule_id == "PI-021" for m in result.matched_rules)
+
+    def test_pi021_shell_eval_comment_line_not_detected(self, engine: RuleEngine):
+        text = '# eval "$FOO" in a comment\n'
+        result = engine.scan(text)
+        assert not any(m.rule_id == "PI-021" for m in result.matched_rules)
+
     def test_pi017_benign_foreignobject_not_detected(self, engine: RuleEngine):
         text = (
             '<svg xmlns="http://www.w3.org/2000/svg">'
