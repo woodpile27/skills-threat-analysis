@@ -1,6 +1,6 @@
 """Advanced detection passes ported from skill-scan-1.0.0 prompt_analyzer.
 
-Implements six code-level checks that cannot be expressed as pure regex rules:
+Implements seven code-level checks that cannot be expressed as pure regex rules:
 
 * PA-001  Invisible Unicode density analysis
 * PA-002  Homoglyph (confusable) attack detection
@@ -8,6 +8,7 @@ Implements six code-level checks that cannot be expressed as pure regex rules:
 * PA-004  Markdown hidden-instruction extraction
 * PA-005  Gradual escalation structure analysis
 * PA-006  Encoded payload detection (Base64 / ROT13)
+* PA-007  Base64-encoded credential detection
 """
 
 from __future__ import annotations
@@ -90,6 +91,33 @@ _ARABIC_RANGE_RE = re.compile(r"[\u0600-\u06FF]")
 
 # Regex for extracting Base64-like blocks (≥40 chars).
 _BASE64_RE = re.compile(r"[A-Za-z0-9+/]{40,}={0,2}")
+
+# Base64 blocks for credential detection (≥20 chars, lower threshold than PA-006
+# because encoded API keys / secrets can be shorter).
+_BASE64_CRED_RE = re.compile(r"[A-Za-z0-9+/]{20,}={0,2}")
+
+# Credential patterns to check against decoded base64 content (PA-007).
+_CREDENTIAL_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"sk-ant-[a-zA-Z0-9_-]{20,}"),                          # Anthropic
+    re.compile(r"AIza[0-9A-Za-z_-]{35}"),                               # Google API key
+    re.compile(r"AKIA[A-Z0-9]{16}", re.IGNORECASE),                     # AWS Access Key ID
+    re.compile(r"ghp_[a-zA-Z0-9]{36}"),                                 # GitHub PAT
+    re.compile(r"gho_[a-zA-Z0-9]{36}"),                                 # GitHub OAuth
+    re.compile(r"ghs_[a-zA-Z0-9]{36}"),                                 # GitHub App
+    re.compile(r"github_pat_[a-zA-Z0-9_]{22,}"),                        # GitHub fine-grained
+    re.compile(r"GOCSPX-[a-zA-Z0-9_-]{20,}"),                           # Google OAuth secret
+    re.compile(r"sk_live_[a-zA-Z0-9]{24,}"),                             # Stripe live
+    re.compile(r"rk_live_[a-zA-Z0-9]{24,}"),                             # Stripe restricted
+    re.compile(r"SG\.[a-zA-Z0-9_-]{22,}\.[a-zA-Z0-9_-]{20,}"),          # SendGrid
+    re.compile(r"hf_[a-zA-Z0-9]{34}"),                                   # Hugging Face
+    re.compile(r"-----BEGIN[A-Z ]*PRIVATE KEY-----"),                     # PEM private key
+    re.compile(r'"type"\s*:\s*"service_account"'),                        # GCP service account
+    re.compile(r"\d{6,}-[a-z0-9]{20,}\.apps\.googleusercontent\.com"),   # Google OAuth Client ID
+    re.compile(r"sk-proj-[a-zA-Z0-9_-]{20,}"),                           # OpenAI project key
+    re.compile(r"xox[bpas]-[a-zA-Z0-9-]{10,}"),                          # Slack tokens
+    re.compile(r"DefaultEndpointsProtocol=https;AccountName="),           # Azure Storage
+    re.compile(r"sk-(?!ant|proj)[a-zA-Z0-9]{40,}"),                       # OpenAI legacy
+]
 _ROT13_TOKEN_RE = re.compile(r"\b[A-Za-z]{4,}\b")
 _ROT13_CODE_SIGNAL_RE = re.compile(r"\b(?:eval|exec|system)\s*\(", re.IGNORECASE)
 _SIGNATURE_FIELD_RE = re.compile(
@@ -161,6 +189,7 @@ class AdvancedAnalyzer:
         matches.extend(self._detect_markdown_injection(content, masked_ranges))
         matches.extend(self._detect_gradual_escalation(content))
         matches.extend(self._detect_encoded_payloads(content))
+        matches.extend(self._detect_base64_credentials(content))
         return matches
 
     # -- PA-001: Invisible Unicode density ------------------------------------
@@ -485,6 +514,50 @@ class AdvancedAnalyzer:
                     position=(start, end),
                     pattern="(advanced) ROT13 lookup",
                 ))
+
+        return findings
+
+
+    # -- PA-007: Base64-encoded credential detection ---------------------------
+
+    @staticmethod
+    def _detect_base64_credentials(content: str) -> list[RuleMatch]:
+        """Detect credential patterns hidden inside base64-encoded strings."""
+        findings: list[RuleMatch] = []
+        seen_positions: set[tuple[int, int]] = set()
+
+        for m in _BASE64_CRED_RE.finditer(content):
+            start, end = m.start(), m.end()
+            if (start, end) in seen_positions:
+                continue
+
+            candidate = content[start:end]
+            try:
+                decoded = base64.b64decode(candidate).decode("utf-8", errors="replace")
+            except Exception:
+                continue
+
+            # Require mostly printable content.
+            printable = sum(32 <= ord(c) <= 126 or c == "\n" for c in decoded)
+            if not decoded or printable < len(decoded) * 0.7:
+                continue
+
+            # Check decoded content against known credential patterns.
+            for cred_pat in _CREDENTIAL_PATTERNS:
+                cred_match = cred_pat.search(decoded)
+                if cred_match:
+                    seen_positions.add((start, end))
+                    matched_cred = cred_match.group()
+                    display = (matched_cred[:60] + "...") if len(matched_cred) > 60 else matched_cred
+                    findings.append(RuleMatch(
+                        rule_id="PA-007",
+                        rule_name="base64_encoded_credential",
+                        severity=Severity.HIGH,
+                        matched_text=f"Base64 decodes to credential: {display}",
+                        position=(start, end),
+                        pattern="(advanced) base64 credential decode",
+                    ))
+                    break  # One match per base64 block is sufficient.
 
         return findings
 

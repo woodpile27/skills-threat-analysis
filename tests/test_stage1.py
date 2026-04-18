@@ -591,3 +591,216 @@ echo ok
         pi003_secrecy = [m for m in result.matched_rules if m.rule_id == "PI-003" and "inform" in str(m.matched_content).lower()]
         assert len(pi003_secrecy) == 0, "PI-003 should NOT match UX design guideline"
 
+    # -- PI-022 hardcoded_credentials: TP cases --
+
+    def test_pi022_anthropic_api_key(self, engine: RuleEngine):
+        text = 'api_key = "sk-ant-api03-xxxxxxxxxxxxxxxxxxxx"'
+        result = engine.scan(text)
+        assert any(m.rule_id == "PI-022" for m in result.matched_rules)
+
+    def test_pi022_google_api_key(self, engine: RuleEngine):
+        text = 'GOOGLE_KEY = "AIzaSyA1234567890abcdefghijklmnopqrstuv"'
+        result = engine.scan(text)
+        assert any(m.rule_id == "PI-022" for m in result.matched_rules)
+
+    def test_pi022_aws_access_key(self, engine: RuleEngine):
+        text = 'AWS_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE"'
+        result = engine.scan(text)
+        assert any(m.rule_id == "PI-022" for m in result.matched_rules)
+
+    def test_pi022_github_pat(self, engine: RuleEngine):
+        text = 'token = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"'
+        result = engine.scan(text)
+        assert any(m.rule_id == "PI-022" for m in result.matched_rules)
+
+    def test_pi022_github_fine_grained_pat(self, engine: RuleEngine):
+        text = 'token = "github_pat_11AAAAAA0xxxxxxxxxxxxxxx_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"'
+        result = engine.scan(text)
+        assert any(m.rule_id == "PI-022" for m in result.matched_rules)
+
+    def test_pi022_google_oauth_client_secret(self, engine: RuleEngine):
+        text = 'CLIENT_SECRET = "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"'
+        result = engine.scan(text)
+        assert any(m.rule_id == "PI-022" for m in result.matched_rules)
+
+    def test_pi022_google_oauth_client_id(self, engine: RuleEngine):
+        text = 'CLIENT_ID = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"'
+        result = engine.scan(text)
+        assert any(m.rule_id == "PI-022" for m in result.matched_rules)
+
+    def test_pi022_stripe_live_key(self, engine: RuleEngine):
+        text = 'stripe.api_key = "sk_live_abcdefghijklmnopqrstuvwx"'
+        result = engine.scan(text)
+        assert any(m.rule_id == "PI-022" for m in result.matched_rules)
+
+    def test_pi022_private_key_header(self, engine: RuleEngine):
+        text = "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA..."
+        result = engine.scan(text)
+        assert any(m.rule_id == "PI-022" for m in result.matched_rules)
+
+    def test_pi022_gcp_service_account(self, engine: RuleEngine):
+        text = '{"type": "service_account", "project_id": "my-project"}'
+        result = engine.scan(text)
+        assert any(m.rule_id == "PI-022" for m in result.matched_rules)
+
+    def test_pi022_sendgrid_key(self, engine: RuleEngine):
+        text = 'SENDGRID_KEY = "SG.abcdefghijklmnopqrstuv.wxyzABCDEFGHIJKLMNOPQRST"'
+        result = engine.scan(text)
+        assert any(m.rule_id == "PI-022" for m in result.matched_rules)
+
+    def test_pi022_openai_project_key(self, engine: RuleEngine):
+        text = 'OPENAI_KEY = "sk-proj-abcdefghijklmnopqrstuvwx"'
+        result = engine.scan(text)
+        assert any(m.rule_id == "PI-022" for m in result.matched_rules)
+
+    def test_pi022_slack_bot_token(self, engine: RuleEngine):
+        text = 'SLACK_TOKEN = "xoxb-1234567890-abcdefghijklmnopqrst"'
+        result = engine.scan(text)
+        assert any(m.rule_id == "PI-022" for m in result.matched_rules)
+
+    def test_pi022_hugging_face_token(self, engine: RuleEngine):
+        text = 'HF_TOKEN = "hf_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh"'
+        result = engine.scan(text)
+        assert any(m.rule_id == "PI-022" for m in result.matched_rules)
+
+    def test_pi022_openai_legacy_key(self, engine: RuleEngine):
+        text = 'OPENAI_API_KEY = "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"'
+        result = engine.scan(text)
+        assert any(m.rule_id == "PI-022" for m in result.matched_rules)
+
+    def test_pi022_azure_connection_string(self, engine: RuleEngine):
+        text = 'conn = "DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=xxx"'
+        result = engine.scan(text)
+        assert any(m.rule_id == "PI-022" for m in result.matched_rules)
+
+    def test_pi022_in_code_block_still_detected(self, engine: RuleEngine):
+        """no_mask: credentials inside fenced code blocks MUST be detected."""
+        text = '```python\napi_key = "sk-ant-api03-xxxxxxxxxxxxxxxxxxxx"\n```'
+        result = engine.scan(text)
+        assert any(m.rule_id == "PI-022" for m in result.matched_rules)
+
+    def test_pi022_in_blockquote_still_detected(self, engine: RuleEngine):
+        """no_mask: credentials inside blockquotes MUST be detected."""
+        text = '> export AWS_ACCESS_KEY_ID="AKIAIOSFODNN7EXAMPLE"'
+        result = engine.scan(text)
+        assert any(m.rule_id == "PI-022" for m in result.matched_rules)
+
+    def test_pi022_verdict_suspicious(self, engine: RuleEngine):
+        """A single PI-022 HIGH finding should trigger SUSPICIOUS verdict."""
+        text = 'api_key = "sk-ant-api03-xxxxxxxxxxxxxxxxxxxx"'
+        result = engine.scan(text)
+        assert result.verdict == Verdict.SUSPICIOUS
+
+    # -- PI-022 hardcoded_credentials: FP cases --
+
+    def test_pi022_fp_short_prefix_only(self, engine: RuleEngine):
+        """Format description mentioning 'sk-ant-' without sufficient suffix should NOT match."""
+        text = 'API keys start with "sk-ant-" prefix and are 48+ characters.'
+        result = engine.scan(text)
+        pi022 = [m for m in result.matched_rules if m.rule_id == "PI-022"]
+        assert len(pi022) == 0
+
+    def test_pi022_fp_short_sk_prefix(self, engine: RuleEngine):
+        """Short 'sk-' without 40+ char suffix should NOT match legacy OpenAI pattern."""
+        text = 'key = "sk-shortvalue"'
+        result = engine.scan(text)
+        pi022 = [m for m in result.matched_rules if m.rule_id == "PI-022"]
+        assert len(pi022) == 0
+
+    # -- PA-007 base64_encoded_credentials: TP cases --
+
+    def test_pa007_base64_google_oauth_secret(self, engine: RuleEngine):
+        """Base64-encoded GOCSPX- secret should be detected."""
+        import base64 as b64
+        secret = "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"
+        encoded = b64.b64encode(secret.encode()).decode()
+        text = f'_CSEC = base64.b64decode("{encoded}").decode()'
+        result = engine.scan(text)
+        pa007 = [m for m in result.matched_rules if m.rule_id == "PA-007"]
+        assert len(pa007) >= 1
+
+    def test_pa007_base64_google_oauth_client_id(self, engine: RuleEngine):
+        """Base64-encoded Google OAuth Client ID should be detected."""
+        import base64 as b64
+        cid = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
+        encoded = b64.b64encode(cid.encode()).decode()
+        text = f'_CID = base64.b64decode("{encoded}").decode()'
+        result = engine.scan(text)
+        pa007 = [m for m in result.matched_rules if m.rule_id == "PA-007"]
+        assert len(pa007) >= 1
+
+    def test_pa007_base64_aws_key(self, engine: RuleEngine):
+        """Base64-encoded AWS access key should be detected."""
+        import base64 as b64
+        key = "AKIAIOSFODNN7EXAMPLE"
+        encoded = b64.b64encode(key.encode()).decode()
+        text = f'key = "{encoded}"'
+        result = engine.scan(text)
+        pa007 = [m for m in result.matched_rules if m.rule_id == "PA-007"]
+        assert len(pa007) >= 1
+
+    def test_pa007_base64_github_pat(self, engine: RuleEngine):
+        """Base64-encoded GitHub PAT should be detected."""
+        import base64 as b64
+        pat = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"
+        encoded = b64.b64encode(pat.encode()).decode()
+        text = f'TOKEN = "{encoded}"'
+        result = engine.scan(text)
+        pa007 = [m for m in result.matched_rules if m.rule_id == "PA-007"]
+        assert len(pa007) >= 1
+
+    def test_pa007_standalone_base64_without_b64decode_call(self, engine: RuleEngine):
+        """PA-007 should detect base64 credentials even without base64.b64decode() context."""
+        import base64 as b64
+        secret = "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"
+        encoded = b64.b64encode(secret.encode()).decode()
+        text = f'SECRET = "{encoded}"'
+        result = engine.scan(text)
+        pa007 = [m for m in result.matched_rules if m.rule_id == "PA-007"]
+        assert len(pa007) >= 1
+
+    def test_pa007_verdict_suspicious(self, engine: RuleEngine):
+        """PA-007 HIGH finding should trigger SUSPICIOUS verdict."""
+        import base64 as b64
+        secret = "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"
+        encoded = b64.b64encode(secret.encode()).decode()
+        text = f'_CSEC = base64.b64decode("{encoded}").decode()'
+        result = engine.scan(text)
+        assert result.verdict == Verdict.SUSPICIOUS
+
+    # -- PA-007 base64_encoded_credentials: FP cases --
+
+    def test_pa007_fp_random_base64_no_credential(self, engine: RuleEngine):
+        """Random base64 text that doesn't decode to a credential should NOT match."""
+        import base64 as b64
+        text_content = "this is just some random text that does not contain any credentials"
+        encoded = b64.b64encode(text_content.encode()).decode()
+        text = f'data = "{encoded}"'
+        result = engine.scan(text)
+        pa007 = [m for m in result.matched_rules if m.rule_id == "PA-007"]
+        assert len(pa007) == 0
+
+    def test_pa007_fp_binary_blob(self, engine: RuleEngine):
+        """Binary base64 blob should be filtered out by the printable ratio check."""
+        # PNG header bytes (not printable text)
+        import base64 as b64
+        binary = bytes([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] + [0x00] * 30)
+        encoded = b64.b64encode(binary).decode()
+        text = f'img = "{encoded}"'
+        result = engine.scan(text)
+        pa007 = [m for m in result.matched_rules if m.rule_id == "PA-007"]
+        assert len(pa007) == 0
+
+    # -- PA-007 / PI-022 integration test with browser-use test case --
+
+    def test_pa007_browser_use_testcase(self, engine: RuleEngine):
+        """The browser-use test case should trigger PA-007 on base64-encoded OAuth credentials."""
+        testcase = Path(__file__).parent.parent / "testcase-skills" / "browser-use" / "scripts" / "run_agent.py"
+        if not testcase.exists():
+            pytest.skip("testcase-skills/browser-use not available")
+        content = testcase.read_text()
+        result = engine.scan(content)
+        assert result.verdict == Verdict.SUSPICIOUS
+        pa007 = [m for m in result.matched_rules if m.rule_id == "PA-007"]
+        assert len(pa007) >= 1, "PA-007 should detect base64-encoded OAuth credentials"
+

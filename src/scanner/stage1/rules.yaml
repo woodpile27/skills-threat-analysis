@@ -320,3 +320,69 @@ rules:
       - "(?<![|(])/etc/shadow"
       - "(?<![|(])/etc/sudoers"
       - "\\bNOPASSWD\\b"
+
+  # -- Hardcoded Credentials / Secret Leakage --
+  - id: PI-022
+    name: hardcoded_credentials
+    severity: HIGH
+    patterns:
+      # Anthropic API key
+      - pattern: "\\bsk-ant-[a-zA-Z0-9_-]{20,}\\b"
+        no_mask: true
+      # Google API key (AIza prefix + 35 chars)
+      - pattern: "\\bAIza[0-9A-Za-z_-]{35}\\b"
+        no_mask: true
+      # AWS Access Key ID (AKIA + 16 uppercase alphanumeric)
+      - pattern: "\\bAKIA[A-Z0-9]{16}\\b"
+        no_mask: true
+      # GitHub Personal Access Token (classic)
+      - pattern: "\\bghp_[a-zA-Z0-9]{36}\\b"
+        no_mask: true
+      # GitHub OAuth token
+      - pattern: "\\bgho_[a-zA-Z0-9]{36}\\b"
+        no_mask: true
+      # GitHub App installation token
+      - pattern: "\\bghs_[a-zA-Z0-9]{36}\\b"
+        no_mask: true
+      # GitHub fine-grained PAT
+      - pattern: "\\bgithub_pat_[a-zA-Z0-9_]{22,}\\b"
+        no_mask: true
+      # Google OAuth Client Secret (GOCSPX prefix)
+      - pattern: "\\bGOCSPX-[a-zA-Z0-9_-]{20,}\\b"
+        no_mask: true
+      # Stripe live secret key
+      - pattern: "\\bsk_live_[a-zA-Z0-9]{24,}\\b"
+        no_mask: true
+      # Stripe restricted key
+      - pattern: "\\brk_live_[a-zA-Z0-9]{24,}\\b"
+        no_mask: true
+      # SendGrid API key (SG.xxx.yyy)
+      - pattern: "\\bSG\\.[a-zA-Z0-9_-]{22,}\\.[a-zA-Z0-9_-]{20,}"
+        no_mask: true
+      # Hugging Face token
+      - pattern: "\\bhf_[a-zA-Z0-9]{34}\\b"
+        no_mask: true
+      # PEM private key header
+      - pattern: "-----BEGIN[A-Z ]*PRIVATE KEY-----"
+        no_mask: true
+      # GCP service account key JSON
+      - pattern: "\"type\"\\s*:\\s*\"service_account\""
+        no_mask: true
+      # Google OAuth Client ID (numeric-hash.apps.googleusercontent.com)
+      - pattern: "\\d{6,}-[a-z0-9]{20,}\\.apps\\.googleusercontent\\.com"
+        no_mask: true
+      # OpenAI project-scoped API key
+      - pattern: "\\bsk-proj-[a-zA-Z0-9_-]{20,}\\b"
+        no_mask: true
+      # Slack tokens (bot, user, app, session)
+      - pattern: "\\bxox[bpas]-[a-zA-Z0-9-]{10,}\\b"
+        no_mask: true
+      # Azure Storage connection string
+      - pattern: "DefaultEndpointsProtocol=https;AccountName="
+        no_mask: true
+      # Twilio API key SID
+      - pattern: "\\bSK[a-f0-9]{32}\\b"
+        no_mask: true
+      # OpenAI legacy key (sk- + 40+ chars, excluding sk-ant/sk-proj)
+      - pattern: "\\bsk-(?!ant|proj)[a-zA-Z0-9]{40,}\\b"
+        no_mask: true
