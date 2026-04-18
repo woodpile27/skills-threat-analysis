@@ -39,6 +39,8 @@ TI_TARGET_RULES: frozenset[str] = frozenset({
     # -- Suspicious encoding (base64 payloads decoded by IOC extractor) --
     "PI-005",  # steganographic_injection: base64/atob/btoa with injection keywords
     "PI-011",  # obfuscation_standalone: base64.b64decode, fromCharCode, etc.
+    # -- Hidden content --
+    "PA-004",  # markdown_hidden_url: URLs in HTML comments (C2, exfiltration)
 })
 
 

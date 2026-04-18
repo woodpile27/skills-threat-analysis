@@ -110,11 +110,21 @@ def apply_ti_deescalation(
                 m.ti_ioc = ",".join(sorted(base_iocs))
                 adjusted = True
             elif m.severity == Severity.HIGH:
-                m.severity = Severity.LOW
-                m.ti_note = (
-                    f"关联 IOC [{entities_desc}] 均在 TI 中无记录(unknown)，"
-                    f"severity 从 HIGH 降为 LOW"
-                )
+                # PA-004 (hidden URLs in HTML comments): unknown TI only
+                # de-escalates to MEDIUM — hidden URLs are suspicious even
+                # without TI confirmation (fresh C2 domains are often unknown).
+                if m.rule_id == "PA-004":
+                    m.severity = Severity.MEDIUM
+                    m.ti_note = (
+                        f"关联 IOC [{entities_desc}] 均在 TI 中无记录(unknown)，"
+                        f"severity 从 HIGH 降为 MEDIUM"
+                    )
+                else:
+                    m.severity = Severity.LOW
+                    m.ti_note = (
+                        f"关联 IOC [{entities_desc}] 均在 TI 中无记录(unknown)，"
+                        f"severity 从 HIGH 降为 LOW"
+                    )
                 m.ti_ioc = ",".join(sorted(base_iocs))
                 adjusted = True
 

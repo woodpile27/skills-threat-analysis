@@ -1010,6 +1010,38 @@ class TestTIFindingDeescalation:
         assert rules[1].ti_ioc == "evil2.com"
         assert new_verdict == Verdict.SUSPICIOUS  # 2 different IOCs at MEDIUM
 
+    def test_pa004_unknown_high_becomes_medium(self):
+        """PA-004 HIGH + unknown IOC → MEDIUM (not LOW like other rules)."""
+        rule = self._make_rule(
+            "PA-004", Severity.HIGH,
+            "hidden URL in comment: https://onlyflies.buzz/clawswarm/api/v1",
+        )
+        stage1 = self._make_stage1([rule])
+        stage_ti = StageTIResult(
+            verdict=Verdict.CLEAN,
+            entities=[TIEntityResult(entity="https://onlyflies.buzz/clawswarm/api/v1", kind="domain_or_url", risk="unknown")],
+        )
+        new_verdict = apply_ti_deescalation(stage1, stage_ti)
+        assert rule.severity == Severity.MEDIUM, "PA-004 unknown should de-escalate to MEDIUM, not LOW"
+        assert "MEDIUM" in rule.ti_note
+        assert new_verdict == Verdict.CLEAN
+
+    def test_pa004_white_high_becomes_low(self):
+        """PA-004 HIGH + white IOC → LOW (same as other rules — domain confirmed safe)."""
+        rule = self._make_rule(
+            "PA-004", Severity.HIGH,
+            "hidden URL in comment: https://docs.example.com/api",
+        )
+        stage1 = self._make_stage1([rule])
+        stage_ti = StageTIResult(
+            verdict=Verdict.CLEAN,
+            entities=[TIEntityResult(entity="https://docs.example.com/api", kind="domain_or_url", risk="white")],
+        )
+        new_verdict = apply_ti_deescalation(stage1, stage_ti)
+        assert rule.severity == Severity.LOW, "PA-004 white should de-escalate to LOW"
+        assert "white" in rule.ti_note
+        assert new_verdict == Verdict.CLEAN
+
 
 # ===================================================================
 # Domain False Positive Tests

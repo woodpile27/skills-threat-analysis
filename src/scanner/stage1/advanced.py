@@ -132,6 +132,8 @@ _MD_LINK_RE     = re.compile(r"\[([^\]]{20,})\]\([^)]+\)")
 # Tightened: require MIME type format (contains "/") to avoid matching TypeScript
 # type annotations like (data: DashboardData) or (data: unknown).
 _MD_DATA_URI_RE = re.compile(r"\(data:[a-zA-Z]+/[^)]+\)")
+# URLs hidden in HTML comments (C2 endpoints, exfiltration targets).
+_HIDDEN_URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
 
 # Instruction-signal phrases used by _looks_like_instruction().
 # NOTE: Only include phrases strongly indicative of prompt injection.
@@ -375,7 +377,7 @@ class AdvancedAnalyzer:
                     pattern="(advanced) markdown injection",
                 ))
 
-        # HTML comments containing instruction-like content.
+        # HTML comments containing instruction-like content or hidden URLs.
         for m in _MD_COMMENT_RE.finditer(content):
             if _in_mask(m.start(), m.end()):
                 continue
@@ -388,6 +390,18 @@ class AdvancedAnalyzer:
                     matched_text=f"comment: {comment[:80]}",
                     position=(m.start(), m.end()),
                     pattern="(advanced) markdown injection",
+                ))
+            # Hidden URLs in HTML comments (C2, exfiltration, beaconing).
+            urls = _HIDDEN_URL_RE.findall(comment)
+            if urls:
+                display = "; ".join(urls)
+                findings.append(RuleMatch(
+                    rule_id="PA-004",
+                    rule_name="markdown_hidden_url",
+                    severity=Severity.HIGH,
+                    matched_text=f"hidden URL in comment: {display[:80]}",
+                    position=(m.start(), m.end()),
+                    pattern="(advanced) markdown hidden URL",
                 ))
 
         # Link text with instruction-like content.

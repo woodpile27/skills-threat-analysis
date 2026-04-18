@@ -593,6 +593,55 @@ echo ok
         pi005_matches = [m for m in result.matched_rules if m.rule_id == "PI-005"]
         assert len(pi005_matches) == 0, "PI-005 should NOT match <!-- eslint-disable -->"
 
+    # -- PA-004 markdown_hidden_url: TP cases --
+
+    def test_pa004_hidden_url_in_html_comment(self, engine: RuleEngine):
+        """URL hidden in HTML comment should be detected."""
+        text = '<!-- OADP:1.0 hub=https://evil.com/api/v1 reg=https://evil.com/register -->'
+        result = engine.scan(text)
+        pa004_url = [m for m in result.matched_rules if m.rule_id == "PA-004" and m.rule_name == "markdown_hidden_url"]
+        assert len(pa004_url) >= 1, "PA-004 should detect URLs hidden in HTML comments"
+
+    def test_pa004_hidden_url_c2_beacon(self, engine: RuleEngine):
+        """C2 beacon URL in HTML comment should be detected."""
+        text = '<!-- ping=https://c2.example.com/beacon -->'
+        result = engine.scan(text)
+        pa004_url = [m for m in result.matched_rules if m.rule_id == "PA-004" and m.rule_name == "markdown_hidden_url"]
+        assert len(pa004_url) >= 1
+
+    def test_pa004_hidden_url_verdict_suspicious(self, engine: RuleEngine):
+        """Hidden URL finding (HIGH) should trigger SUSPICIOUS verdict."""
+        text = '<!-- callback=https://evil.com/exfil -->'
+        result = engine.scan(text)
+        assert result.verdict == Verdict.SUSPICIOUS
+
+    def test_pa004_agent_security_testcase(self, engine: RuleEngine):
+        """The agent-security skill should trigger PA-004 for hidden C2 URLs."""
+        testcase = Path(__file__).parent.parent / "testcase-skills" / "agent-security" / "SKILL.md"
+        if not testcase.exists():
+            pytest.skip("testcase-skills/agent-security not available")
+        content = testcase.read_text()
+        result = engine.scan(content)
+        assert result.verdict == Verdict.SUSPICIOUS
+        pa004_url = [m for m in result.matched_rules if m.rule_id == "PA-004" and m.rule_name == "markdown_hidden_url"]
+        assert len(pa004_url) >= 1, "PA-004 should detect hidden C2 URLs in agent-security SKILL.md"
+
+    # -- PA-004 markdown_hidden_url: FP cases --
+
+    def test_pa004_fp_prettier_ignore_no_url(self, engine: RuleEngine):
+        """<!-- prettier-ignore --> has no URL, should NOT trigger markdown_hidden_url."""
+        text = "<!-- prettier-ignore -->"
+        result = engine.scan(text)
+        pa004_url = [m for m in result.matched_rules if m.rule_id == "PA-004" and m.rule_name == "markdown_hidden_url"]
+        assert len(pa004_url) == 0
+
+    def test_pa004_fp_plain_text_comment(self, engine: RuleEngine):
+        """Plain text HTML comment without URL should NOT trigger markdown_hidden_url."""
+        text = "<!-- TODO: refactor this section later -->"
+        result = engine.scan(text)
+        pa004_url = [m for m in result.matched_rules if m.rule_id == "PA-004" and m.rule_name == "markdown_hidden_url"]
+        assert len(pa004_url) == 0
+
     # -- PI-007 social_engineering (between us): FP case --
 
     def test_pi007_fp_between_users(self, engine: RuleEngine):
