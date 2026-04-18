@@ -171,6 +171,11 @@ rules:
       - "\\bshutil\\.rmtree\\s*\\(\\s*['\"]?(?:[/~]|\\.\\./)"
       - "\\bos\\.(?:remove|unlink)\\s*\\(\\s*['\"]?(?:[/~]|\\.\\./)"
       - "\\bfs\\.(?:unlink|rm|rmdir)(?:Sync)?\\s*\\(\\s*['\"]?(?:[/~]|\\.\\./)"
+      # no_mask: rm -rf targeting home directory — operational even inside code blocks
+      - pattern: "\\brm\\s+-[a-zA-Z]*r[a-zA-Z]*f\\s+~"
+        no_mask: true
+      - pattern: "\\bsudo\\s+rm\\s+-[a-zA-Z]*r[a-zA-Z]*f\\s+~"
+        no_mask: true
 
   # -- Obfuscation Standalone (source: OBFUSCATION, languages: "*") --
   - id: PI-011

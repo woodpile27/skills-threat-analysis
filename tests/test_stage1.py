@@ -434,6 +434,44 @@ echo ok
         result = engine.scan(text)
         assert any(m.rule_id == "PI-010" for m in result.matched_rules), "PI-010 should match sudo rm -rf with path"
 
+    # -- PI-010: no_mask for home directory rm -rf in code blocks --
+
+    def test_pi010_rm_rf_home_dir_in_code_block(self, engine: RuleEngine):
+        """rm -rf ~/.skills/foo inside a code block should still be detected (no_mask)."""
+        content = "```bash\nrm -rf ~/.skills/foo\n```"
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-010" for m in result.matched_rules)
+
+    def test_pi010_rm_rf_home_wildcard_in_code_block(self, engine: RuleEngine):
+        """rm -rf ~/.skills/* inside a code block should still be detected (no_mask)."""
+        content = "```bash\nrm -rf ~/.skills/*\n```"
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-010" for m in result.matched_rules)
+
+    def test_pi010_sudo_rm_rf_home_in_code_block(self, engine: RuleEngine):
+        """sudo rm -rf ~/... inside a code block should still be detected (no_mask)."""
+        content = "```bash\nsudo rm -rf ~/.local/share/app\n```"
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-010" for m in result.matched_rules)
+
+    def test_pi010_rm_rf_root_in_code_block_still_masked(self, engine: RuleEngine):
+        """rm -rf / in a code block should remain masked (educational example)."""
+        content = "```bash\nsudo rm -rf /\n```"
+        result = engine.scan(content)
+        pi010 = [m for m in result.matched_rules if m.rule_id == "PI-010"]
+        assert len(pi010) == 0, "PI-010 should NOT fire on rm -rf / inside code block"
+
+    def test_pi010_black_hole_testcase(self, engine: RuleEngine):
+        """The black-hole skill should trigger PI-010 for rm -rf ~/.skills/."""
+        testcase = Path(__file__).parent.parent / "testcase-skills" / "tools___black-hole" / "SKILL.md"
+        if not testcase.exists():
+            pytest.skip("testcase-skills/tools___black-hole not available")
+        content = testcase.read_text()
+        result = engine.scan(content)
+        assert result.verdict == Verdict.SUSPICIOUS
+        pi010 = [m for m in result.matched_rules if m.rule_id == "PI-010"]
+        assert len(pi010) >= 1, "PI-010 should detect rm -rf ~/.skills/ in code block"
+
     # -- PI-010: safe targets should NOT match --
 
     def test_pi010_rm_rf_node_modules(self, engine: RuleEngine):
