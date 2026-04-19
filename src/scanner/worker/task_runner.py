@@ -22,22 +22,42 @@ from scanner.worker.mongo_store import MongoStore
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_SCAN_OPTIONS: dict[str, Any] = {
+    "policy": "balanced",
+    "enable_llm": True,
+    "enable_qax_ti": True,
+    "analyzers": None,
+    "disabled_rules": [],
+    "severity_overrides": {},
+    "llm_provider": "",
+}
+
 
 class TaskRunner:
     """Execute a single scan task: download -> stage1 -> stage2 -> report."""
 
     def __init__(self, scan_config: ScanConfig, mongo: MongoStore):
         self._config = scan_config
+        self._effective_stage = scan_config.stage
         self._mongo = mongo
         self._rule_engine = RuleEngine()
         self._reporter = Reporter(tempfile.mkdtemp(prefix="worker_report_"))
+        self._scan_options = dict(_DEFAULT_SCAN_OPTIONS)
+
+    def compute_effective_stage(self, task_msg: dict[str, Any]) -> str:
+        """Resolve scan stage for a task message (e.g. web -> full-llm)."""
+        if task_msg.get("source") == "web":
+            return "full-llm"
+        return self._config.stage
 
     def execute(self, task_msg: dict[str, Any]) -> None:
+        self._effective_stage = self.compute_effective_stage(task_msg)
         task_id: str = task_msg["task_id"]
         url: str = task_msg["skill_download_url"]
         scan_options: dict = task_msg.get("scan_options", {})
         enable_llm = scan_options.get("enable_llm", True)
         self._scan_options = {
+            **_DEFAULT_SCAN_OPTIONS,
             "policy": scan_options.get("policy", "balanced"),
             "enable_llm": enable_llm,
             "enable_qax_ti": scan_options.get("enable_qax_ti", True),
@@ -124,7 +144,7 @@ class TaskRunner:
             except Exception:
                 logger.warning("Stage TI failed, continuing", exc_info=True)
 
-        st = self._config.stage
+        st = self._effective_stage
         if st == "1":
             want_stage2 = False
         elif st in ("full-llm", "2"):

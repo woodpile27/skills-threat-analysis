@@ -7,7 +7,7 @@ import tempfile
 import textwrap
 import zipfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -299,6 +299,54 @@ class TestTaskRunner:
         assert len(final_call) == 1
 
     @patch("scanner.worker.task_runner.SemanticAnalyzer")
+    @patch("scanner.worker.task_runner.download_and_load")
+    def test_execute_web_source_runs_stage2_when_config_full(
+        self, mock_download, MockAnalyzer,
+    ):
+        """source=web maps to full-llm: CLEAN skill still runs Stage 2."""
+        from scanner.worker.task_runner import TaskRunner
+
+        config = ScanConfig(stage="full", api_key_env="ARK_API_KEY", api_key="dummy")
+        mongo = MagicMock()
+        runner = TaskRunner(config, mongo)
+
+        assert runner.compute_effective_stage({"source": "web"}) == "full-llm"
+        assert runner.compute_effective_stage({}) == "full"
+
+        clean_stage1 = Stage1Result(
+            verdict=Verdict.CLEAN, matched_rules=[], duration_ms=1,
+        )
+        runner._rule_engine.scan = MagicMock(return_value=clean_stage1)
+
+        mock_download.return_value = SkillFile(
+            id="test-skill",
+            source="unknown",
+            file_path="test.md",
+            content="This is a perfectly clean skill.",
+            size_bytes=30,
+        )
+
+        mock_analyzer = MockAnalyzer.return_value
+        mock_s2 = Stage2Result(
+            verdict=Verdict.CLEAN,
+            status=AnalyzerStatus.COMPLETED,
+            confidence=0.9,
+        )
+        mock_analyzer.analyze_batch = AsyncMock(return_value=[mock_s2])
+
+        task_msg = {
+            "task_id": "web-src-task",
+            "skill_download_url": "https://example.com/skill.zip",
+            "source": "web",
+            "scan_options": {},
+        }
+
+        runner.execute(task_msg)
+
+        mock_analyzer.analyze_batch.assert_called_once()
+        mongo.save_report.assert_called_once()
+
+    @patch("scanner.worker.task_runner.SemanticAnalyzer")
     def test_stage2_runs_for_clean_skill_in_full_llm_mode(self, MockAnalyzer):
         """In stage='full-llm', CLEAN skills still go through Stage 2."""
         from scanner.worker.task_runner import TaskRunner
@@ -319,7 +367,7 @@ class TestTaskRunner:
             status=AnalyzerStatus.COMPLETED,
             confidence=0.9,
         )
-        mock_analyzer.analyze_batch.return_value = [mock_s2]
+        mock_analyzer.analyze_batch = AsyncMock(return_value=[mock_s2])
 
         skill = SkillFile(
             id="test-skill",
@@ -390,7 +438,7 @@ class TestTaskRunner:
             status=AnalyzerStatus.COMPLETED,
             confidence=0.85,
         )
-        mock_analyzer.analyze_batch.return_value = [mock_s2]
+        mock_analyzer.analyze_batch = AsyncMock(return_value=[mock_s2])
 
         skill = SkillFile(
             id="test-skill",
@@ -434,7 +482,7 @@ class TestTaskRunner:
             status=AnalyzerStatus.COMPLETED,
             confidence=0.75,
         )
-        mock_analyzer.analyze_batch.return_value = [mock_s2]
+        mock_analyzer.analyze_batch = AsyncMock(return_value=[mock_s2])
 
         skill = SkillFile(
             id="test-skill",
@@ -478,7 +526,7 @@ class TestTaskRunner:
             status=AnalyzerStatus.COMPLETED,
             confidence=0.75,
         )
-        mock_analyzer.analyze_batch.return_value = [mock_s2]
+        mock_analyzer.analyze_batch = AsyncMock(return_value=[mock_s2])
 
         skill = SkillFile(
             id="test-skill",
@@ -537,7 +585,7 @@ class TestTaskRunner:
             status=AnalyzerStatus.COMPLETED,
             confidence=0.8,
         )
-        mock_analyzer.analyze_batch.return_value = [mock_s2]
+        mock_analyzer.analyze_batch = AsyncMock(return_value=[mock_s2])
 
         skill = SkillFile(
             id="test-skill",

@@ -140,7 +140,12 @@ class Consumer:
             try:
                 task_msg = json.loads(body)
                 task_id = task_msg.get("task_id", task_id)
-                logger.info("Processing task %s", task_id)
+                src = task_msg.get("source", "")
+                stage = self._task_runner.compute_effective_stage(task_msg)
+                logger.info(
+                    "Processing task %s source=%s stage=%s",
+                    task_id, src, stage,
+                )
 
                 self._task_runner.execute(task_msg)
                 self._threadsafe_ack(method.delivery_tag)
