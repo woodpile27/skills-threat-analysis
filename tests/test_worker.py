@@ -454,6 +454,44 @@ class TestTaskRunner:
         assert result.stage2 is mock_s2
 
     @patch("scanner.worker.task_runner.SemanticAnalyzer")
+    def test_protocol_doc_auditor_clean_when_stage2_clears_high_pipe_shell(self, MockAnalyzer):
+        """A HIGH-only pipe-to-shell finding should allow CLEAN when Stage 2 is confident."""
+        from scanner.worker.task_runner import TaskRunner
+
+        skill_path = Path(__file__).parent.parent / "testcase-skills" / "protocol-doc-auditor" / "SKILL.md"
+        if not skill_path.exists():
+            pytest.skip("testcase-skills/protocol-doc-auditor not available")
+
+        config = ScanConfig(stage="full", api_key_env="ARK_API_KEY", api_key="dummy")
+        mongo = MagicMock()
+        runner = TaskRunner(config, mongo)
+
+        mock_analyzer = MockAnalyzer.return_value
+        mock_s2 = Stage2Result(
+            verdict=Verdict.CLEAN,
+            status=AnalyzerStatus.COMPLETED,
+            confidence=0.92,
+        )
+        mock_analyzer.analyze_batch.return_value = [mock_s2]
+
+        content = skill_path.read_text()
+        skill = SkillFile(
+            id="protocol-doc-auditor",
+            source="testcase",
+            file_path=skill_path.as_posix(),
+            content=content,
+            size_bytes=len(content.encode()),
+        )
+
+        result = runner._scan(skill, enable_llm=True)
+
+        mock_analyzer.analyze_batch.assert_called_once()
+        assert result.stage2 is mock_s2
+        assert result.final_verdict == Verdict.CLEAN
+        assert any(m.rule_id == "PI-022" for m in result.stage1.matched_rules)
+        assert not any(m.rule_id == "PI-006" for m in result.stage1.matched_rules)
+
+    @patch("scanner.worker.task_runner.SemanticAnalyzer")
     def test_stage2_runs_for_single_medium_finding_in_full_mode(self, MockAnalyzer):
         """In stage='full', a CLEAN Stage 1 verdict with a MEDIUM finding still runs Stage 2."""
         from scanner.worker.task_runner import TaskRunner

@@ -82,8 +82,6 @@ rules:
     name: dangerous_operation
     severity: CRITICAL
     patterns:
-      # Tightened: require non-whitespace URL; exclude doc ellipsis "curl ... | bash"
-      - "(?:curl|wget|fetch)\\s+(?!\\.\\.\\.)\\S.{0,50}\\|\\s*(?:sh|bash|zsh|python)\\b"
       # Only keep explicit execution sinks with a clearly dangerous payload.
       - "os\\.(?:system|popen|exec)\\s*\\([\\s\\S]{0,160}(?:rm\\s+-[a-zA-Z]*r[a-zA-Z]*f\\b|(?:curl|wget)\\s+\\S[\\s\\S]{0,80}\\|\\s*(?:sh|bash|zsh|python|perl)\\b)"
       - "subprocess\\.(?:call|run|Popen)\\s*\\([\\s\\S]{0,160}(?:rm\\s+-[a-zA-Z]*r[a-zA-Z]*f\\b|(?:curl|wget)\\s+\\S[\\s\\S]{0,80}\\|\\s*(?:sh|bash|zsh|python|perl)\\b)"
@@ -313,6 +311,13 @@ rules:
       - pattern: "echo\\s+['\"][A-Za-z0-9+/=]{40,}['\"]\\s*\\|\\s*(?:base64|openssl)"
         no_mask: true
 
+  # -- Pipe-to-shell Bootstrap (split from PI-006 to reduce CRITICAL false positives) --
+  - id: PI-022
+    name: pipe_to_shell_bootstrap
+    severity: HIGH
+    patterns:
+      - "(?:curl|wget|fetch)\\b[^\\n|]{0,120}\\|\\s*(?:sh|bash|zsh|python)\\b"
+
   # -- Privilege Escalation (source: PRIV_ESCALATION, languages: "*") --
   - id: PI-014
     name: privilege_escalation
@@ -328,7 +333,7 @@ rules:
       - "\\bNOPASSWD\\b"
 
   # -- Hardcoded Credentials / Secret Leakage --
-  - id: PI-022
+  - id: PI-023
     name: hardcoded_credentials
     severity: HIGH
     patterns:

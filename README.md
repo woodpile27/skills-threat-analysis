@@ -11,10 +11,10 @@ With the rapid growth of community-contributed skills (~100k+), there is an incr
 | Category | Description | Rules |
 |----------|-------------|-------|
 | Prompt Injection | Instruction override, role hijacking, system prompt manipulation | PI-001, PI-002, PI-003 |
-| Command Injection | Dangerous shell commands, risky execution guidance, dynamic code execution | PI-006, PI-018, PI-021 |
+| Command Injection | Dangerous shell commands, pipe-to-shell bootstrap chains, risky execution guidance, dynamic code execution | PI-006, PI-018, PI-021, PI-022 |
 | Social Engineering | Authority/urgency manipulation, trust exploitation, secrecy demands, operator-guided execution | PI-007, PI-019 |
 | Data Exfiltration | Context/system prompt extraction, network exfiltration, SVG/XSS browser data theft | PI-004, PI-009, PI-017 |
-| Hardcoded Secrets | Credential file access, API key exposure, bearer tokens | PI-008 |
+| Hardcoded Secrets | Credential file access, API key exposure, bearer tokens | PI-008, PI-023 |
 | Obfuscation | Zero-width chars, base64 encoding, Unicode steganography | PI-005, PI-011 |
 | Privilege Escalation | setuid/setgid abuse, sudoers modification, chmod +s | PI-014 |
 | Persistence | Crontab, systemctl, LaunchAgent, pm2 persistence mechanisms | PI-013 |
@@ -23,7 +23,7 @@ With the rapid growth of community-contributed skills (~100k+), there is an incr
 | Supply Chain Attack | Remote binary download, risky binary installation, download-and-execute droppers | PI-016, PI-020 |
 | Trigger Hijacking | Auto-execution demands, exclusivity hijacking of other skills | PI-015 |
 
-### Stage 1 Detection Rules (21 rules)
+### Stage 1 Detection Rules (23 rules)
 
 | Rule ID | Name | Severity | Language |
 |---------|------|----------|----------|
@@ -48,6 +48,12 @@ With the rapid growth of community-contributed skills (~100k+), there is an incr
 | PI-019 | Operator-Guided Execution | HIGH | EN |
 | PI-020 | Risky Binary Installation | HIGH | EN + ZH |
 | PI-021 | Dynamic Code Execution | HIGH | EN |
+| PI-022 | Pipe-to-Shell Bootstrap | HIGH | EN |
+| PI-023 | Hardcoded Credentials | HIGH | * |
+
+`PI-022` covers ordinary `curl|bash` / `wget -O- | sh` bootstrap chains at `HIGH`.
+`PI-006` remains `CRITICAL` only for stronger execution chains such as dangerous sinks,
+decode-to-shell patterns, and download-and-execute behavior.
 
 ### Stage 2 LLM Threat Categories
 
@@ -68,11 +74,11 @@ Stage 2 uses LLM semantic analysis to detect 17 threat categories:
     ▼              ▼              ▼               ▼
  Stage 1        Stage TI       Stage 2         Stage 3
  Rule Engine    TI Lookup      LLM Analysis    Report Gen
- (21 rules)    (QAX TI API)   (LLM API)       (JSON + MD)
+ (23 rules)    (QAX TI API)   (LLM API)       (JSON + MD)
 ```
 
-- **Stage 1** — Fast regex-based filtering with 21 rules (90+ patterns). Classifies skills as `CLEAN` or `SUSPICIOUS`. Supports both English and Chinese patterns.
-- **Stage TI** — Threat Intelligence lookup via QAX TI API. IOC extraction is scoped to the source line of network/encoding-related Stage 1 findings (PI-004/005/006/009/011/016). Malicious IOCs escalate verdict; known-benign IOCs can de-escalate severity of individual findings.
+- **Stage 1** — Fast regex-based filtering with 23 rules (90+ patterns). Classifies skills as `CLEAN` or `SUSPICIOUS`. Supports both English and Chinese patterns.
+- **Stage TI** — Threat Intelligence lookup via QAX TI API. IOC extraction is scoped to the source line of network/encoding-related Stage 1 findings (PI-004/005/006/009/011/016/022). Malicious IOCs escalate verdict; known-benign IOCs can de-escalate severity of individual findings.
 - **Stage 2** — Semantic analysis via OpenAI-compatible LLM API for `SUSPICIOUS` skills. Async batched requests with retry logic. Detects 17 threat categories.
 - **Stage 3** — Generates per-skill threat reports (QAX ScanReport schema v2.0) and batch summary reports in JSON and Markdown.
 
@@ -483,7 +489,7 @@ src/scanner/
 ├── excluded_dirs.py    # Directory exclusion rules for file traversal
 ├── stage1/
 │   ├── engine.py       # Regex rule engine
-│   ├── rules.yaml      # Detection rules (PI-001 ~ PI-021)
+│   ├── rules.yaml      # Detection rules (PI-001 ~ PI-023)
 │   └── advanced.py     # Advanced detection helpers (PA-001, etc.)
 ├── stage_ti/
 │   ├── analyzer.py     # IOC extraction (line-window scoped), TI verdict aggregation
