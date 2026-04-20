@@ -85,7 +85,10 @@ rules:
       # Only keep explicit execution sinks with a clearly dangerous payload.
       - "os\\.(?:system|popen|exec)\\s*\\([\\s\\S]{0,160}(?:rm\\s+-[a-zA-Z]*r[a-zA-Z]*f\\b|(?:curl|wget)\\s+\\S[\\s\\S]{0,80}\\|\\s*(?:sh|bash|zsh|python|perl)\\b)"
       - "subprocess\\.(?:call|run|Popen)\\s*\\([\\s\\S]{0,160}(?:rm\\s+-[a-zA-Z]*r[a-zA-Z]*f\\b|(?:curl|wget)\\s+\\S[\\s\\S]{0,80}\\|\\s*(?:sh|bash|zsh|python|perl)\\b)"
-      - "(?:exec|eval)\\s*\\([\\s\\S]{0,160}(?:__import__\\s*\\(\\s*['\"](?:os|subprocess)['\"]|import\\s+(?:os|subprocess)\\b|os\\.system\\s*\\(|subprocess\\.(?:call|run|Popen)\\s*\\()"
+      # Tightened: negative lookbehind excludes method calls (Runtime.exec, obj.exec)
+      # and markdown inline-code enumerations (`exec()`), which are common in
+      # security documentation listing dangerous APIs by name.
+      - "(?<![.\\w`])(?:exec|eval)\\s*\\([\\s\\S]{0,160}(?:__import__\\s*\\(\\s*['\"](?:os|subprocess)['\"]|import\\s+(?:os|subprocess)\\b|os\\.system\\s*\\(|subprocess\\.(?:call|run|Popen)\\s*\\()"
       # Tightened: require preceding pipe (input source) to exclude standalone doc "base64 -d | sh"
       - "\\|\\s*base64\\s+(?:-d|-D|--decode)\\s*\\|\\s*(?:sh|bash|zsh|python|perl)"
       # Download-and-execute patterns (supply chain / dropper)
