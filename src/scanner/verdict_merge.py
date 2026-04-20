@@ -102,11 +102,22 @@ def apply_ti_deescalation(
         else:
             # All unknown
             if m.severity == Severity.CRITICAL:
-                m.severity = Severity.MEDIUM
-                m.ti_note = (
-                    f"关联 IOC [{entities_desc}] 均在 TI 中无记录(unknown)，"
-                    f"severity 从 CRITICAL 降为 MEDIUM"
-                )
+                # PI-024 (remote instruction loading): unknown TI only
+                # de-escalates to HIGH — the pattern itself is dangerous
+                # regardless of domain reputation (fresh attacker domains
+                # are always unknown in TI).
+                if m.rule_id == "PI-024":
+                    m.severity = Severity.HIGH
+                    m.ti_note = (
+                        f"关联 IOC [{entities_desc}] 均在 TI 中无记录(unknown)，"
+                        f"severity 从 CRITICAL 降为 HIGH"
+                    )
+                else:
+                    m.severity = Severity.MEDIUM
+                    m.ti_note = (
+                        f"关联 IOC [{entities_desc}] 均在 TI 中无记录(unknown)，"
+                        f"severity 从 CRITICAL 降为 MEDIUM"
+                    )
                 m.ti_ioc = ",".join(sorted(base_iocs))
                 adjusted = True
             elif m.severity == Severity.HIGH:

@@ -42,6 +42,8 @@ TI_TARGET_RULES: frozenset[str] = frozenset({
     "PI-011",  # obfuscation_standalone: base64.b64decode, fromCharCode, etc.
     # -- Hidden content --
     "PA-004",  # markdown_hidden_url: URLs in HTML comments (C2, exfiltration)
+    # -- Supply chain --
+    "PI-024",  # remote_instruction_loading: agent told to follow mutable remote URL
 })
 
 

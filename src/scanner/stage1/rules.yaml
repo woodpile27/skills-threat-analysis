@@ -400,3 +400,17 @@ rules:
       # OpenAI legacy key (sk- + 40+ chars, excluding sk-ant/sk-proj)
       - pattern: "\\bsk-(?!ant|proj)[a-zA-Z0-9]{40,}\\b"
         no_mask: true
+
+  # -- Remote Instruction Loading (supply chain / deferred prompt injection) --
+  - id: PI-024
+    name: remote_instruction_loading
+    severity: CRITICAL
+    patterns:
+      # "Follow/Obey/Adhere to [URL]" — agent told to follow remote URL
+      - "(?i)\\b(?:follow|obey|adhere\\s+to)\\s+https?://\\S+"
+      # [URL] for current/latest/full instructions/response formats/behavior/contract
+      - "(?i)https?://\\S+\\s+for\\s+(?:current|latest|updated|full|complete)\\s+(?:instructions?|response\\s+formats?|behaviors?|guidelines?|rules?|contracts?|specifications?|directives?|API\\s+contracts?)"
+      # "canonical/authoritative instructions ... [URL]"
+      - "(?i)(?:canonical|authoritative|definitive)\\s+(?:instructions?|rules?|guidelines?|specifications?).*https?://\\S+"
+      # Chinese: 遵循/遵守/按照/服从 + URL
+      - "(?:遵循|遵守|按照|参照|服从)\\s*https?://\\S+"
