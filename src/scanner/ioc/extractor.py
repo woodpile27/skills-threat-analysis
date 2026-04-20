@@ -125,8 +125,17 @@ def _is_benign_host(host: str) -> bool:
     return False
 
 
-def _extract_urls(text: str) -> list[tuple[str, str, int, int]]:
-    """Extract URLs, returning ``(url, host, start, end)`` tuples for non-benign URLs."""
+def _extract_urls(
+    text: str,
+    *,
+    include_benign_urls: bool = False,
+) -> list[tuple[str, str, int, int]]:
+    """Extract URLs, returning ``(url, host, start, end)`` tuples.
+
+    By default, hosts in :data:`_BENIGN_HOST_SUFFIXES` are skipped. Set
+    *include_benign_urls* True for Stage TI lookups so URLs align with
+    Stage1 ``matched_text`` for de-escalation.
+    """
     results: list[tuple[str, str, int, int]] = []
     for m in _URL_RE.finditer(text):
         url = m.group().rstrip(".,;:!?")
@@ -135,7 +144,9 @@ def _extract_urls(text: str) -> list[tuple[str, str, int, int]]:
             host = (parsed.hostname or "").lower()
         except Exception:
             continue
-        if not host or _is_benign_host(host):
+        if not host:
+            continue
+        if not include_benign_urls and _is_benign_host(host):
             continue
         # Skip if host is a private IP
         try:
@@ -238,6 +249,8 @@ def _decode_base64_payloads(text: str) -> list[tuple[str, int, int]]:
 def extract_entities(
     content: str,
     source_file: str = "",
+    *,
+    include_benign_urls: bool = False,
 ) -> list[tuple[str, str, str, int, int, str]]:
     """Extract IOC entities from *content*.
 
@@ -246,6 +259,10 @@ def extract_entities(
     *kind* is ``"ip"`` or ``"domain_or_url"``, *start*/*end* are character
     offsets into *content*, and *decoded_from* is the original base64 string
     if the entity was extracted from a decoded payload (empty string otherwise).
+
+    When *include_benign_urls* is True, URLs on hosts in
+    :data:`_BENIGN_HOST_SUFFIXES` (e.g. ``github.com``) are still extracted so
+    threat-intel correlation can run on the same strings Stage1 matched.
     """
     seen: set[tuple[str, str]] = set()
     results: list[tuple[str, str, str, int, int, str]] = []
@@ -263,7 +280,9 @@ def extract_entities(
 
     # 2. Extract URLs (also collect hosts to avoid duplicate domain extraction)
     url_hosts: set[str] = set()
-    for url, host, start, end in _extract_urls(content):
+    for url, host, start, end in _extract_urls(
+        content, include_benign_urls=include_benign_urls
+    ):
         _add("domain_or_url", url, start, end)
         url_hosts.add(host)
 
@@ -277,7 +296,9 @@ def extract_entities(
         b64_snippet = content[b64_start:b64_end][:40]
         for ip, _, _ in _extract_ipv4(decoded_text):
             _add("ip", ip, b64_start, b64_end, b64_snippet)
-        for url, host, _, _ in _extract_urls(decoded_text):
+        for url, host, _, _ in _extract_urls(
+            decoded_text, include_benign_urls=include_benign_urls
+        ):
             _add("domain_or_url", url, b64_start, b64_end, b64_snippet)
             url_hosts.add(host)
         for domain, _, _ in _extract_domains(decoded_text):

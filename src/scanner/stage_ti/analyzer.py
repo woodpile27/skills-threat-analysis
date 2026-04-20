@@ -92,7 +92,7 @@ def _extract_entities_from_findings(
         seen_windows.add(window_key)
 
         for kind, value, src, start, end, decoded_from in extract_entities(
-            window_text, m.source_file
+            window_text, m.source_file, include_benign_urls=True
         ):
             key = (kind, value)
             if key in seen_entities:

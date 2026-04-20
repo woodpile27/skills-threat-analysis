@@ -105,6 +105,11 @@ class TestExtractURLs:
     def test_skip_github(self):
         assert len(_extract_urls("see https://github.com/user/repo")) == 0
 
+    def test_include_benign_urls_github(self):
+        text = "see https://github.com/user/repo"
+        urls = self._urls(_extract_urls(text, include_benign_urls=True))
+        assert any("github.com/user/repo" in u for u in urls)
+
     def test_skip_pypi(self):
         assert len(_extract_urls("install from https://pypi.org/project/foo")) == 0
 
@@ -200,6 +205,26 @@ class TestExtractEntities:
         assert len(url_results) >= 1
         _, value, _, start, end, _ = url_results[0]
         assert content[start:end] == value
+
+    def test_github_installer_sh_url_skipped_by_default(self):
+        content = (
+            "wget https://github.com/conda-forge/miniforge/releases/latest/"
+            "download/Miniforge3-Linux-aarch64.sh"
+        )
+        values = {r[1] for r in extract_entities(content)}
+        assert not any("github.com" in v for v in values)
+
+    def test_github_installer_sh_url_when_include_benign_urls(self):
+        content = (
+            "wget https://github.com/conda-forge/miniforge/releases/latest/"
+            "download/Miniforge3-Linux-aarch64.sh"
+        )
+        results = extract_entities(content, include_benign_urls=True)
+        url_values = [r[1] for r in results if r[0] == "domain_or_url"]
+        assert any(
+            v.startswith("https://github.com/") and v.endswith(".sh")
+            for v in url_values
+        )
 
 
 class TestExtractEntitiesFromFiles:
