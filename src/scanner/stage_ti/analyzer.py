@@ -36,6 +36,7 @@ TI_TARGET_RULES: frozenset[str] = frozenset({
     "PI-006",  # dangerous_operation: execution sinks, base64 droppers, download-and-execute
     "PI-022",  # pipe_to_shell_bootstrap: curl/wget/fetch piped into sh/bash
     "PI-009",  # network_exfiltration: ngrok URLs, nslookup, dns.resolve
+    "PI-026",  # reverse_shell_execution: bash/nc/socat/python reverse-shell patterns
     "PI-016",  # remote_binary_download: URLs to .exe/.sh/.bin
     # -- Suspicious encoding (base64 payloads decoded by IOC extractor) --
     "PI-005",  # steganographic_injection: base64/atob/btoa with injection keywords

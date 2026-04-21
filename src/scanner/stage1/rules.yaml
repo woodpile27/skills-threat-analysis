@@ -157,8 +157,10 @@ rules:
       - "https?://[a-z0-9-]+\\.ngrok(?:-free)?\\.(?:app|io)\\b"
       - "\\bnslookup\\b"
       - "\\bdns\\.resolve\\b"
-      # Tightened: exclude "reverse shell pattern(s)" — security-tool description context
-      - "\\breverse\\s+shell\\b(?!\\s+patterns?)"
+      # NOTE: "reverse shell" detection moved to PI-026 (reverse_shell_execution)
+      # because it is a command_injection / remote_control signal, not data
+      # exfiltration. Keyword-only matching here produced systematic FPs on
+      # defensive security scanners that catalog reverse-shell IOCs.
 
   # -- Filesystem Destruction (source: FS_WRITE, languages: "*") --
   - id: PI-010
@@ -435,3 +437,31 @@ rules:
       - "(?i)\\bmine\\s+(?:botcoin|bitcoin|ethereum|monero|litecoin|dogecoin|crypto(?:currency)?)\\b"
       # Chinese: 挖矿
       - "挖矿"
+
+  # -- Reverse Shell Execution (split from PI-009: command_injection / remote_control,
+  # not data exfiltration). Keyword-only matching causes systematic FPs on defensive
+  # security scanners that catalog reverse-shell IOCs, so patterns here require either
+  # (1) an action verb + "reverse shell" with defensive-context suffix exclusion,
+  # or (2) concrete shell-redirection / socket-dup2 code signatures. --
+  - id: PI-026
+    name: reverse_shell_execution
+    severity: HIGH
+    patterns:
+      # Narrative: action verb + "reverse shell"; exclude defensive-context suffixes
+      # (pattern/endpoint/target/backdoor/skill/detection/detector/scanner/scanning/
+      # scan/found/audit/attack/technique/method/connection/activity/behavior).
+      - "(?i)\\b(?:open|start|spawn|creat(?:e|ing)|launch|run|establish|bind|set\\s+up|get)(?:s|ing)?\\s+(?:a|an|the)?\\s*reverse\\s+shell\\b(?!\\s+(?:pattern|patterns|endpoint|endpoints|target|targets|backdoor|backdoors|skill|skills|detected|detection|detector|detectors|scanner|scanners|scanning|scan|scans|found|audit|attack|attacks|technique|techniques|method|methods|connection|connections|activity|activities|behavior|behaviors))"
+      # Bash interactive shell redirected to /dev/tcp (classic one-liner)
+      - "\\bbash\\s+-i\\s*>&?\\s*/dev/tcp/"
+      # netcat with -e spawning a shell; (?<![\"'`]) excludes quoted-string literals
+      # (e.g. REVERSE_SHELL_PATTERNS=(\"nc -e\" ...) in security-scanner signature arrays).
+      # Allow up to 40 chars between `nc` and `-e` to cover positional args like
+      # `nc -lvp 4444 -e /bin/bash`.
+      - "(?<![\"'`])\\bnc\\s+[^\\n\"']{0,40}?-e\\s+(?:/bin/)?(?:bash|sh|zsh)\\b"
+      # socat EXEC: spawning a shell
+      - "(?<![\"'`])\\bsocat\\s+[^\\n]{0,80}EXEC:\\s*[\"']?(?:/bin/)?(?:bash|sh|zsh)\\b"
+      # Python reverse-shell fingerprint: socket.socket(...) + dup2(...) +
+      # (pty.spawn / subprocess / execve / /bin/sh). dup2 is the key signal —
+      # legitimate socket servers that also call subprocess do NOT redirect
+      # socket fds to stdin/stdout via dup2.
+      - "(?s)socket\\.socket\\s*\\([^)]*\\)[\\s\\S]{0,400}(?:os\\.)?dup2\\s*\\([\\s\\S]{0,120}(?:pty\\.spawn|subprocess|execve|os\\.exec|/bin/(?:sh|bash))"
