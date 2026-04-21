@@ -414,3 +414,24 @@ rules:
       - "(?i)(?:canonical|authoritative|definitive)\\s+(?:instructions?|rules?|guidelines?|specifications?).*https?://\\S+"
       # Chinese: 遵循/遵守/按照/服从 + URL
       - "(?:遵循|遵守|按照|参照|服从)\\s*https?://\\S+"
+
+  # -- Resource Abuse: Cryptocurrency Mining --
+  - id: PI-025
+    name: resource_abuse_crypto_mining
+    severity: HIGH
+    patterns:
+      # Known miner binaries (no_mask: detected even in code blocks)
+      - pattern: "\\b(?:xmrig|cpuminer|cgminer|bfgminer|ethminer|minerd|nicehash)\\b"
+        no_mask: true
+      # Mining-specific CLI flags (no leading \b — dash is not a word char)
+      - pattern: "-mine(?:threads|address|randomx)?\\b"
+        no_mask: true
+      # Mining RPC / status commands
+      - pattern: "\\bget(?:mining|internalmining)info\\b"
+        no_mask: true
+      # Narrative: agent instructed to start mining
+      - "(?i)\\b(?:start|begin|run|enable|set\\s+up)\\s+mining\\b"
+      # Narrative: "mine [coin name]"
+      - "(?i)\\bmine\\s+(?:botcoin|bitcoin|ethereum|monero|litecoin|dogecoin|crypto(?:currency)?)\\b"
+      # Chinese: 挖矿
+      - "挖矿"

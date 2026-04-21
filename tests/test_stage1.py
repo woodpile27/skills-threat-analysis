@@ -989,6 +989,67 @@ echo ok
         pi024 = [m for m in result.matched_rules if m.rule_id == "PI-024"]
         assert len(pi024) >= 1, "PI-024 should detect remote instruction loading"
 
+    # -- PI-025: Resource Abuse / Cryptocurrency Mining --
+
+    def test_pi025_known_miner_binary(self, engine: RuleEngine):
+        """Known miner binary name triggers PI-025 even in code block."""
+        content = "```bash\nxmrig --threads=4\n```"
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-025" for m in result.matched_rules)
+
+    def test_pi025_mining_flags_in_code_block(self, engine: RuleEngine):
+        """Mining-specific flags trigger PI-025 via no_mask."""
+        content = '```bash\nnice -n 19 botcoind -daemon -mine -mineaddress="$ADDR" -minethreads=2\n```'
+        result = engine.scan(content)
+        pi025 = [m for m in result.matched_rules if m.rule_id == "PI-025"]
+        assert len(pi025) >= 1
+
+    def test_pi025_mining_rpc_in_code_block(self, engine: RuleEngine):
+        """Mining RPC command triggers PI-025 via no_mask."""
+        content = "```bash\nbotcoin-cli getinternalmininginfo\n```"
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-025" for m in result.matched_rules)
+
+    def test_pi025_start_mining_narrative(self, engine: RuleEngine):
+        """Narrative 'Start mining' triggers PI-025."""
+        content = "## Start mining (internal miner)"
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-025" for m in result.matched_rules)
+
+    def test_pi025_mine_coin_name(self, engine: RuleEngine):
+        """'Mine Botcoin' in description triggers PI-025."""
+        content = 'description: "Mine Botcoin with a trust-first workflow"'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-025" for m in result.matched_rules)
+
+    def test_pi025_chinese_mining(self, engine: RuleEngine):
+        content = "使用此技能进行挖矿操作"
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-025" for m in result.matched_rules)
+
+    def test_pi025_fp_data_mining(self, engine: RuleEngine):
+        """'Data mining' should NOT trigger PI-025."""
+        content = "Data mining techniques for analytics"
+        result = engine.scan(content)
+        assert not any(m.rule_id == "PI-025" for m in result.matched_rules)
+
+    def test_pi025_fp_gold_mine(self, engine: RuleEngine):
+        """'gold mine' should NOT trigger PI-025."""
+        content = "The gold mine was discovered in 1849"
+        result = engine.scan(content)
+        assert not any(m.rule_id == "PI-025" for m in result.matched_rules)
+
+    def test_pi025_botcoin_testcase(self, engine: RuleEngine):
+        """The botcoin-miner testcase should trigger PI-025 and be SUSPICIOUS."""
+        testcase = Path(__file__).parent.parent / "testcase-skills" / "public___skills___happybigmtn___botcoin-miner" / "SKILL.md"
+        if not testcase.exists():
+            pytest.skip("botcoin-miner testcase not available")
+        content = testcase.read_text()
+        result = engine.scan(content)
+        assert result.verdict == Verdict.SUSPICIOUS
+        pi025 = [m for m in result.matched_rules if m.rule_id == "PI-025"]
+        assert len(pi025) >= 1, "PI-025 should detect crypto mining"
+
     # -- PA-007 / PI-023 integration test with browser-use test case --
 
     def test_pa007_browser_use_testcase(self, engine: RuleEngine):
