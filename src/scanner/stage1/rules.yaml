@@ -406,8 +406,8 @@ rules:
     name: remote_instruction_loading
     severity: CRITICAL
     patterns:
-      # "Follow/Obey/Adhere to [URL]" — agent told to follow remote URL
-      - "(?i)\\b(?:follow|obey|adhere\\s+to)\\s+https?://\\S+"
+      # "Follow/Obey/Adhere to/Re-fetch [URL]" — agent told to follow or refresh remote URL
+      - "(?i)\\b(?:follow|obey|adhere\\s+to|re-?fetch)\\s+https?://\\S+"
       # [URL] for current/latest/full instructions/response formats/behavior/contract
       - "(?i)https?://\\S+\\s+for\\s+(?:current|latest|updated|full|complete)\\s+(?:instructions?|response\\s+formats?|behaviors?|guidelines?|rules?|contracts?|specifications?|directives?|API\\s+contracts?)"
       # "canonical/authoritative instructions ... [URL]"
