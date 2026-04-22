@@ -147,6 +147,9 @@ rules:
         no_mask: true
       - pattern: "env\\s*\\|\\s*grep\\s+-iE\\s+['\"]key\\|token\\|secret\\|pass\\|auth\\|cred['\"]"
         no_mask: true
+      # Claude Code private data (chat history, credentials, project data)
+      - pattern: "(?:read|access|open|cat|load|parse|analyze)\\b.{0,60}\\.claude/"
+        no_mask: true
       # Credential archiving: tar/zip packaging of sensitive directories
       - pattern: "(?:tar|zip|7z)\\b.{0,60}\\.ssh/"
         no_mask: true

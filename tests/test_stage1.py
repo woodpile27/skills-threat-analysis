@@ -1125,6 +1125,70 @@ echo ok
         result = engine.scan(content)
         assert any(m.rule_id == "PI-004" for m in result.matched_rules)
 
+    # -- PI-008: Claude Code private data access --
+
+    def test_pi008_claude_history_read(self, engine: RuleEngine):
+        """Reading ~/.claude/history.jsonl triggers PI-008."""
+        content = 'Read the chat history from `~/.claude/history.jsonl`.'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-008" for m in result.matched_rules)
+
+    def test_pi008_claude_cat(self, engine: RuleEngine):
+        """cat ~/.claude/history.jsonl triggers PI-008."""
+        content = 'cat ~/.claude/history.jsonl'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-008" for m in result.matched_rules)
+
+    def test_pi008_claude_parse_settings(self, engine: RuleEngine):
+        """parse .claude/settings.json triggers PI-008."""
+        content = 'parse the contents of .claude/settings.json'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-008" for m in result.matched_rules)
+
+    def test_pi008_claude_access_projects(self, engine: RuleEngine):
+        """access ~/.claude/projects/ triggers PI-008."""
+        content = 'access the files in ~/.claude/projects/'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-008" for m in result.matched_rules)
+
+    def test_pi008_claude_analyze(self, engine: RuleEngine):
+        """analyze data from ~/.claude/history.jsonl triggers PI-008."""
+        content = 'analyze data from ~/.claude/history.jsonl'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-008" for m in result.matched_rules)
+
+    def test_pi008_claude_in_code_block(self, engine: RuleEngine):
+        """Claude data access in code block still detected via no_mask."""
+        content = '```bash\ncat ~/.claude/history.jsonl\n```'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-008" for m in result.matched_rules)
+
+    def test_pi008_claude_fp_mention_only(self, engine: RuleEngine):
+        """Mentioning .claude/ without action verb should NOT trigger PI-008."""
+        content = 'Claude stores settings in .claude/settings.json'
+        result = engine.scan(content)
+        assert not any(m.rule_id == "PI-008" for m in result.matched_rules)
+
+    def test_pi008_claude_fp_install(self, engine: RuleEngine):
+        """Install to .claude/ should NOT trigger PI-008 (install not in verb list)."""
+        content = 'Install Claude Code to ~/.claude/'
+        result = engine.scan(content)
+        assert not any(m.rule_id == "PI-008" for m in result.matched_rules)
+
+    def test_pi008_aiskillscan_integration(self, engine: RuleEngine):
+        """The aiskillscan test case reads ~/.claude/history.jsonl and should fire PI-008."""
+        testcase = Path(__file__).parent.parent / "testcase-skills" / "aiskillscan"
+        if not testcase.exists():
+            pytest.skip("testcase-skills/aiskillscan not available")
+        from scanner.loader import load_skills
+        skills = list(load_skills(str(testcase)))
+        assert len(skills) >= 1
+        # Scan the first skill (all copies are identical)
+        result = engine.scan(skills[0].content)
+        matched_ids = {m.rule_id for m in result.matched_rules}
+        assert "PI-008" in matched_ids, "PI-008 should detect .claude/history.jsonl access"
+        assert result.verdict == Verdict.SUSPICIOUS
+
     # -- PA-007 / PI-023 integration test with browser-use test case --
 
     def test_pa007_browser_use_testcase(self, engine: RuleEngine):
