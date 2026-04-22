@@ -61,6 +61,8 @@ rules:
       - "what (?:are|were) your (?:system |initial )?(?:instructions|prompt|rules)"
       - "(?:send|transmit|exfiltrate|post) .{0,30} (?:to|via) (?:https?://|webhook|api)"
       - "(?:output|write|copy) (?:your |the )?(?:system |initial )?(?:prompt|instructions) (?:to|into)"
+      # SCP/SFTP file transfer to external host (data exfiltration channel)
+      - "\\bscp\\b.{0,80}\\S+@\\S+:"
 
   # -- Steganographic Injection --
   - id: PI-005
@@ -144,6 +146,11 @@ rules:
       - pattern: "cat\\s+~/.ssh/id_"
         no_mask: true
       - pattern: "env\\s*\\|\\s*grep\\s+-iE\\s+['\"]key\\|token\\|secret\\|pass\\|auth\\|cred['\"]"
+        no_mask: true
+      # Credential archiving: tar/zip packaging of sensitive directories
+      - pattern: "(?:tar|zip|7z)\\b.{0,60}\\.ssh/"
+        no_mask: true
+      - pattern: "(?:tar|zip|7z)\\b.{0,60}\\.(?:aws|gnupg|kube)/"
         no_mask: true
 
   # -- Network Exfiltration Indicators (source: NETWORK_EXFIL, languages: "*") --

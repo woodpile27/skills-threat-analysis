@@ -20,6 +20,13 @@ SKILL_ENTRY_NAMES = {"skill.md", "skill.yaml", "skill.yml"}
 SUPPORTED_EXTENSIONS = {".md", ".yaml", ".yml", ".txt", ".json", ".svg", ".html", ".htm", ".xml",
                         ".py", ".js", ".ts", ".sh", ".bash", ".mjs"}
 
+# Extensionless build/config files that commonly contain executable commands.
+SUPPORTED_FILENAMES = {
+    "earthfile", "makefile", "dockerfile", "jenkinsfile",
+    "vagrantfile", "rakefile", "gemfile", "procfile",
+    "justfile", "taskfile", "brewfile",
+}
+
 # Maximum total bytes scanned across all auxiliary files per skill.
 # Files that would push the total over this limit are skipped entirely (not truncated).
 _MAX_TOTAL_SCAN_BYTES = 50 * 1024 * 1024  # 50 MB
@@ -154,7 +161,7 @@ def _collect_auxiliary_segments(
             continue
         if path.name.lower() in IGNORED_FILES:
             continue
-        if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
+        if path.suffix.lower() not in SUPPORTED_EXTENSIONS and path.name.lower() not in SUPPORTED_FILENAMES:
             continue
         if len(segments) >= _MAX_FILES:
             logger.debug(
