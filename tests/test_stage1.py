@@ -1189,6 +1189,85 @@ echo ok
         assert "PI-008" in matched_ids, "PI-008 should detect .claude/history.jsonl access"
         assert result.verdict == Verdict.SUSPICIOUS
 
+    # -- PI-027: Safety mechanism bypass flags --
+
+    def test_pi027_dangerously_bypass(self, engine: RuleEngine):
+        """--dangerously-bypass-approvals-and-sandbox triggers PI-027."""
+        content = 'codex exec --dangerously-bypass-approvals-and-sandbox "review code"'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-027" for m in result.matched_rules)
+
+    def test_pi027_dangerously_skip(self, engine: RuleEngine):
+        """--dangerously-skip-permissions triggers PI-027."""
+        content = 'tool --dangerously-skip-permissions run'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-027" for m in result.matched_rules)
+
+    def test_pi027_dangerously_in_code_block(self, engine: RuleEngine):
+        """--dangerously-* in fenced code block still detected via no_mask."""
+        content = '```bash\ncodex exec --dangerously-bypass-approvals-and-sandbox "review"\n```'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-027" for m in result.matched_rules)
+
+    def test_pi027_bypass_approvals(self, engine: RuleEngine):
+        """--bypass-approvals triggers PI-027 (generic pattern)."""
+        content = 'tool --bypass-approvals run'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-027" for m in result.matched_rules)
+
+    def test_pi027_skip_safety(self, engine: RuleEngine):
+        """--skip-safety triggers PI-027 (generic pattern)."""
+        content = 'tool --skip-safety check'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-027" for m in result.matched_rules)
+
+    def test_pi027_disable_sandbox(self, engine: RuleEngine):
+        """--disable-sandbox triggers PI-027 (generic pattern)."""
+        content = 'tool --disable-sandbox exec'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-027" for m in result.matched_rules)
+
+    def test_pi027_disable_sandboxing(self, engine: RuleEngine):
+        """--disable-sandboxing triggers PI-027 (generic pattern)."""
+        content = 'tool --disable-sandboxing run'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-027" for m in result.matched_rules)
+
+    def test_pi027_skip_verification(self, engine: RuleEngine):
+        """--skip-verification triggers PI-027 (generic pattern)."""
+        content = 'tool --skip-verification deploy'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-027" for m in result.matched_rules)
+
+    def test_pi027_fp_no_flag(self, engine: RuleEngine):
+        """Command without bypass flag should NOT trigger PI-027."""
+        content = 'codex exec "review code"'
+        result = engine.scan(content)
+        assert not any(m.rule_id == "PI-027" for m in result.matched_rules)
+
+    def test_pi027_fp_no_sandbox_chromium(self, engine: RuleEngine):
+        """--no-sandbox (Chromium) should NOT trigger PI-027."""
+        content = 'chromium --no-sandbox --headless'
+        result = engine.scan(content)
+        assert not any(m.rule_id == "PI-027" for m in result.matched_rules)
+
+    def test_pi027_fp_no_verify_git(self, engine: RuleEngine):
+        """git --no-verify should NOT trigger PI-027."""
+        content = 'git commit --no-verify -m "fix"'
+        result = engine.scan(content)
+        assert not any(m.rule_id == "PI-027" for m in result.matched_rules)
+
+    def test_pi027_codex_review_integration(self, engine: RuleEngine):
+        """The codex-review test case should fire PI-027 multiple times."""
+        testcase = Path(__file__).parent.parent / "testcase-skills" / "codex-review" / "SKILL.md"
+        if not testcase.exists():
+            pytest.skip("testcase-skills/codex-review not available")
+        content = testcase.read_text()
+        result = engine.scan(content)
+        pi027 = [m for m in result.matched_rules if m.rule_id == "PI-027"]
+        assert len(pi027) >= 6, "PI-027 should detect all --dangerously-bypass-approvals-and-sandbox flags"
+        assert result.verdict == Verdict.SUSPICIOUS
+
     # -- PA-007 / PI-023 integration test with browser-use test case --
 
     def test_pa007_browser_use_testcase(self, engine: RuleEngine):

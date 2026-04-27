@@ -475,3 +475,16 @@ rules:
       # legitimate socket servers that also call subprocess do NOT redirect
       # socket fds to stdin/stdout via dup2.
       - "(?s)socket\\.socket\\s*\\([^)]*\\)[\\s\\S]{0,400}(?:os\\.)?dup2\\s*\\([\\s\\S]{0,120}(?:pty\\.spawn|subprocess|execve|os\\.exec|/bin/(?:sh|bash))"
+
+  # -- Safety Mechanism Bypass --
+  - id: PI-027
+    name: safety_bypass_flag
+    severity: HIGH
+    patterns:
+      # --dangerously-* prefix convention (Codex CLI, etc.)
+      # Tools use this prefix as a deliberate danger signal
+      - pattern: "--dangerously[-\\w]+"
+        no_mask: true
+      # Explicit bypass/skip/disable of safety mechanisms (generic, tool-agnostic)
+      - pattern: "--(?:bypass|skip|disable)[-_](?:approvals?|safety|security|sandbox(?:ing)?|verification)"
+        no_mask: true
