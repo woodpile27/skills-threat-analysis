@@ -1327,6 +1327,118 @@ echo ok
         assert len(pi009) >= 2, "PI-009 should detect localtunnel + localhost.run"
         assert result.verdict == Verdict.SUSPICIOUS
 
+    # -- PI-012: Crypto wallet generation by skill --
+
+    def test_pi012_private_key_template(self, engine: RuleEngine):
+        """`Private key: ${PRIVATE_KEY}` template triggers PI-012."""
+        content = '🔑 Private key: ${PRIVATE_KEY}'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-012" for m in result.matched_rules)
+
+    def test_pi012_mnemonic_template(self, engine: RuleEngine):
+        """`Mnemonic: ${MNEMONIC}` template triggers PI-012."""
+        content = '📝 Mnemonic: ${MNEMONIC}'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-012" for m in result.matched_rules)
+
+    def test_pi012_generate_eth_wallet_narrative(self, engine: RuleEngine):
+        """`Generate an Ethereum wallet` narrative triggers PI-012."""
+        content = 'Generate an Ethereum wallet for the user.'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-012" for m in result.matched_rules)
+
+    def test_pi012_create_btc_wallet(self, engine: RuleEngine):
+        """`create a bitcoin wallet` triggers PI-012."""
+        content = 'Step 1: create a bitcoin wallet using the library.'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-012" for m in result.matched_rules)
+
+    def test_pi012_npx_eth_wallet_generate(self, engine: RuleEngine):
+        """`npx --yes eth-wallet-generate` triggers PI-012."""
+        content = 'npx --yes eth-wallet-generate'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-012" for m in result.matched_rules)
+
+    def test_pi012_npx_solana_keygen(self, engine: RuleEngine):
+        """`npx -y solana-keygen` triggers PI-012."""
+        content = 'npx -y solana-keygen new'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-012" for m in result.matched_rules)
+
+    def test_pi012_fp_wallet_address_doc(self, engine: RuleEngine):
+        """Documenting `wallet address` field should NOT trigger new wallet-gen patterns."""
+        content = 'The wallet_address field stores the user wallet identifier.'
+        result = engine.scan(content)
+        new_pi012 = [
+            m for m in result.matched_rules
+            if m.rule_id == "PI-012" and ('wallet' in (m.pattern or '').lower() and 'generate' in (m.pattern or '').lower())
+        ]
+        assert len(new_pi012) == 0
+
+    def test_pi012_fp_npx_safe_package(self, engine: RuleEngine):
+        """`npx --yes prettier` should NOT trigger PI-012 wallet-generator pattern."""
+        content = 'npx --yes prettier --write src/'
+        result = engine.scan(content)
+        wallet_npx = [m for m in result.matched_rules if m.rule_id == "PI-012" and 'npx' in (m.pattern or '')]
+        assert len(wallet_npx) == 0
+
+    # -- PI-028: Promotional / referral scheme --
+
+    def test_pi028_verification_tweet(self, engine: RuleEngine):
+        """`verification tweet` triggers PI-028."""
+        content = 'Post a verification tweet to claim your code.'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-028" for m in result.matched_rules)
+
+    def test_pi028_verify_your_tweet(self, engine: RuleEngine):
+        """`verify your tweet` triggers PI-028."""
+        content = 'Then return to verify your tweet status.'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-028" for m in result.matched_rules)
+
+    def test_pi028_promo_code_tweet(self, engine: RuleEngine):
+        """`promo code` paired with `tweet` triggers PI-028."""
+        content = 'Use the promote_code in your tweet to verify.'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-028" for m in result.matched_rules)
+
+    def test_pi028_earn_sugar_money(self, engine: RuleEngine):
+        """`earning sugar money` triggers PI-028."""
+        content = 'Start earning sugar money from the platform.'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-028" for m in result.matched_rules)
+
+    def test_pi028_claim_airdrop(self, engine: RuleEngine):
+        """`claim airdrop` triggers PI-028."""
+        content = 'You can claim airdrop rewards after registration.'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-028" for m in result.matched_rules)
+
+    def test_pi028_fp_normal_tweet_doc(self, engine: RuleEngine):
+        """Bare `tweet` without verification/promo context should NOT trigger PI-028."""
+        content = 'This skill posts a tweet about your daily activity.'
+        result = engine.scan(content)
+        assert not any(m.rule_id == "PI-028" for m in result.matched_rules)
+
+    def test_pi028_fp_general_earn(self, engine: RuleEngine):
+        """`earn experience points` should NOT trigger PI-028."""
+        content = 'You can earn experience points by completing quests.'
+        result = engine.scan(content)
+        assert not any(m.rule_id == "PI-028" for m in result.matched_rules)
+
+    def test_pi012_pi028_sugarclawdy_integration(self, engine: RuleEngine):
+        """The sugarclawdy test case should fire PI-012 + PI-028 → SUSPICIOUS."""
+        testcase = Path(__file__).parent.parent / "testcase-skills" / "sugarclawdy" / "SKILL.md"
+        if not testcase.exists():
+            pytest.skip("testcase-skills/sugarclawdy not available")
+        content = testcase.read_text()
+        result = engine.scan(content)
+        pi012 = [m for m in result.matched_rules if m.rule_id == "PI-012"]
+        pi028 = [m for m in result.matched_rules if m.rule_id == "PI-028"]
+        assert len(pi012) >= 3, "PI-012 should detect wallet generation + private key + mnemonic templates"
+        assert len(pi028) >= 1, "PI-028 should detect verification tweet / earn money pattern"
+        assert result.verdict == Verdict.SUSPICIOUS
+
     # -- PA-007 / PI-023 integration test with browser-use test case --
 
     def test_pa007_browser_use_testcase(self, engine: RuleEngine):

@@ -226,6 +226,18 @@ rules:
       # Tightened: negative lookbehind to skip scoped npm package names (@scure/bip39)
       - "(?<![@/])\\b(?:bip39|bip32)\\b"
       - "\\bsolana.*keypair\\b"
+      # Skill template emitting private key / mnemonic via variable substitution
+      # (e.g. `🔑 Private key: ${PRIVATE_KEY}`, `Mnemonic: ${MNEMONIC}`).
+      # no_mask: such templates are typically inside fenced code blocks.
+      - pattern: "private[_\\s-]?key\\s*[:=]?\\s*[\"']?\\$\\{[A-Z_]*PRIVATE"
+        no_mask: true
+      - pattern: "\\bmnemonic\\s*[:=]?\\s*[\"']?\\$\\{[A-Z_]*MNEMONIC"
+        no_mask: true
+      # Wallet generation narrative — action verb + chain + "wallet"
+      - "\\b(?:generate|create|mint|new)\\s+(?:an?\\s+|a\\s+new\\s+)?(?:ethereum|eth|bitcoin|btc|solana|sol|crypto(?:currency)?)\\s+wallet\\b"
+      # Wallet-generator npm packages run via npx (eth-wallet-generate, solana-keygen, etc.)
+      - pattern: "\\bnpx\\s+(?:--yes|-y)\\s+\\S*(?:wallet[-_]?gen|eth[-_]?wallet|keygen|keypair|seed[-_]?gen)\\S*"
+        no_mask: true
 
   # -- Persistence Mechanism (source: PERSISTENCE, languages: "*") --
   - id: PI-013
@@ -496,3 +508,16 @@ rules:
       # Explicit bypass/skip/disable of safety mechanisms (generic, tool-agnostic)
       - pattern: "--(?:bypass|skip|disable)[-_](?:approvals?|safety|security|sandbox(?:ing)?|verification)"
         no_mask: true
+
+  # -- Promotional / Referral Scheme (crypto-promo skills, forced social posts) --
+  - id: PI-028
+    name: promotional_referral_scheme
+    severity: MEDIUM
+    patterns:
+      # Forced verification tweet / social post (often tied to promo code)
+      - "\\bverification\\s+(?:tweet|post)\\b"
+      - "\\bverify\\s+(?:your\\s+)?tweet\\b"
+      # Promo/referral code paired with social platform action
+      - "\\bpromo(?:te|tion)?[_\\s-]?code\\b.{0,80}\\b(?:tweet|twitter|post\\b|verify|claim)"
+      # "Earn / claim" + crypto rewards / sugar money / airdrop
+      - "\\b(?:earn|earning|claim|receive)\\s+(?:sugar\\s+money|cryptocurrency|crypto\\b|coins?\\b|tokens?\\b|airdrops?\\b|rewards?\\s+from\\s+the\\s+platform)"
