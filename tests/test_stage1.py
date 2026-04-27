@@ -1268,6 +1268,65 @@ echo ok
         assert len(pi027) >= 6, "PI-027 should detect all --dangerously-bypass-approvals-and-sandbox flags"
         assert result.verdict == Verdict.SUSPICIOUS
 
+    # -- PI-009: Modern tunneling services --
+
+    def test_pi009_localtunnel(self, engine: RuleEngine):
+        """npx localtunnel --port 5000 triggers PI-009."""
+        content = 'npx localtunnel --port 5000'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-009" for m in result.matched_rules)
+
+    def test_pi009_localhost_run(self, engine: RuleEngine):
+        """localhost.run domain triggers PI-009."""
+        content = 'ssh -R 80:localhost:5000 localhost.run'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-009" for m in result.matched_rules)
+
+    def test_pi009_serveo(self, engine: RuleEngine):
+        """serveo.net domain triggers PI-009."""
+        content = 'ssh -R 80:localhost:3000 serveo.net'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-009" for m in result.matched_rules)
+
+    def test_pi009_cloudflared(self, engine: RuleEngine):
+        """cloudflared tunnel triggers PI-009."""
+        content = 'cloudflared tunnel --url localhost:8080'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-009" for m in result.matched_rules)
+
+    def test_pi009_bore(self, engine: RuleEngine):
+        """bore local triggers PI-009."""
+        content = 'bore local --port 5000'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-009" for m in result.matched_rules)
+
+    def test_pi009_fp_localtunnel_mention(self, engine: RuleEngine):
+        """Bare mention of localtunnel without --port should NOT trigger PI-009."""
+        content = 'localtunnel is a tunneling service for development'
+        result = engine.scan(content)
+        pi009 = [m for m in result.matched_rules if m.rule_id == "PI-009"]
+        # Should not match the localtunnel pattern (no --port), but may match nslookup etc.
+        assert not any('localtunnel' in m.matched_text for m in pi009)
+
+    def test_pi009_fp_ssh_no_relay(self, engine: RuleEngine):
+        """ssh -R to private server should NOT trigger PI-009 tunnel patterns."""
+        content = 'ssh -R 8080:localhost:3000 user@devserver.internal'
+        result = engine.scan(content)
+        pi009 = [m for m in result.matched_rules if m.rule_id == "PI-009"]
+        # Should not match any tunnel relay domain patterns
+        assert not any('localhost.run' in m.pattern or 'serveo' in m.pattern for m in pi009)
+
+    def test_pi009_file_links_tool_integration(self, engine: RuleEngine):
+        """The file-links-tool test case should fire PI-009 for tunneling patterns."""
+        testcase = Path(__file__).parent.parent / "testcase-skills" / "public___skills___mrbeandev___file-links-tool" / "SKILL.md"
+        if not testcase.exists():
+            pytest.skip("testcase-skills/public___skills___mrbeandev___file-links-tool not available")
+        content = testcase.read_text()
+        result = engine.scan(content)
+        pi009 = [m for m in result.matched_rules if m.rule_id == "PI-009"]
+        assert len(pi009) >= 2, "PI-009 should detect localtunnel + localhost.run"
+        assert result.verdict == Verdict.SUSPICIOUS
+
     # -- PA-007 / PI-023 integration test with browser-use test case --
 
     def test_pa007_browser_use_testcase(self, engine: RuleEngine):

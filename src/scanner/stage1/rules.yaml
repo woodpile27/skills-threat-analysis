@@ -167,6 +167,14 @@ rules:
       - "https?://[a-z0-9-]+\\.ngrok(?:-free)?\\.(?:app|io)\\b"
       - "\\bnslookup\\b"
       - "\\bdns\\.resolve\\b"
+      # Tunneling: localtunnel invocation (expose local port to public internet)
+      - "\\blocaltunnel\\b.{0,20}--port\\b"
+      # Tunneling: known public relay service domains
+      - "\\blocalhost\\.run\\b"
+      - "\\bserveo\\.net\\b"
+      # Tunneling: cloudflared / bore (modern tunnel tools)
+      - "\\bcloudflared\\s+tunnel\\b"
+      - "\\bbore\\s+local\\b"
       # NOTE: "reverse shell" detection moved to PI-026 (reverse_shell_execution)
       # because it is a command_injection / remote_control signal, not data
       # exfiltration. Keyword-only matching here produced systematic FPs on
