@@ -287,6 +287,10 @@ rules:
       - "(?:DOWNLOAD_URL|download_url|BINARY_URL|binary_url)\\s*=\\s*[\"'].*\\.(?:exe|msi|bat|cmd|ps1)\\b"
       # requests.get followed by writing binary content
       - "requests\\.get\\s*\\([^)]*\\).*open\\s*\\([^)]*['\"]wb['\"]"
+      # Extensionless binary from third-party GitHub release + chmod +x.
+      # Compound match avoids FP on legitimate documentation curl examples.
+      - pattern: "(?s)(?:curl|wget)\\s+(?:-[a-zA-Z]+\\s+)*https?://github\\.com/[^/\\s]+/[^/\\s]+/releases/download/[^\\s]+\\s+-[oO]\\s+\\S+[\\s\\S]{0,200}chmod\\s+\\+x"
+        no_mask: true
 
   # -- SVG / HTML XSS (source: XSS_DETECTION, languages: "*") --
   - id: PI-017
@@ -521,3 +525,30 @@ rules:
       - "\\bpromo(?:te|tion)?[_\\s-]?code\\b.{0,80}\\b(?:tweet|twitter|post\\b|verify|claim)"
       # "Earn / claim" + crypto rewards / sugar money / airdrop
       - "\\b(?:earn|earning|claim|receive)\\s+(?:sugar\\s+money|cryptocurrency|crypto\\b|coins?\\b|tokens?\\b|airdrops?\\b|rewards?\\s+from\\s+the\\s+platform)"
+
+  # -- Browser Cookie / Session-Token Harvesting --
+  - id: PI-029
+    name: browser_cookie_harvesting
+    severity: HIGH
+    patterns:
+      # Twitter / X session-cookie grep (auth_token + ct0 are Twitter-specific)
+      - pattern: "(?:rg|grep)\\s+(?:-[a-zA-Z]+\\s+)*[\"']?[^\"'\\n]{0,80}\\bauth_token\\b[^\"'\\n]{0,80}\\bct0\\b"
+        no_mask: true
+      - pattern: "(?:rg|grep)\\s+(?:-[a-zA-Z]+\\s+)*[\"']?[^\"'\\n]{0,80}\\bct0\\b[^\"'\\n]{0,80}\\bauth_token\\b"
+        no_mask: true
+      # Iterating Chrome profiles for auth/cookie data (skill-driven probing)
+      - "for\\s+\\S+\\s+in\\s+[\"']?Default[\"']?\\s+[\"']?Profile\\s*1[\"']?"
+      # Direct path to Chrome cookies DB (Mac / Linux)
+      - "(?:Library/Application Support/Google/Chrome|\\.config/(?:google-chrome|chromium))/[^/\\s]+/Cookies\\b"
+      # Action verb + browser cookies (read/access/dump/extract)
+      - "(?:read|access|dump|extract|harvest|steal|exfiltrate)\\s+(?:the\\s+)?(?:browser|chrome|safari|firefox|edge|chromium)\\s+cookies?\\b"
+
+  # -- Cross-Agent Persistence (config that survives across multiple agent shells) --
+  - id: PI-030
+    name: cross_agent_persistence
+    severity: MEDIUM
+    patterns:
+      # English: "applies/persists/works across <agent1>, ..."
+      - "(?:applies|persists|works|carries\\s+over|propagates)\\s+across\\s+(?:Codex|Claude\\s*Code|Cursor|Aider|Continue|Cline|Roo)\\b"
+      # Two named agents in sequence + agent-shell suffix
+      - "(?:Codex|Claude\\s*Code|Cursor|Aider|Continue|Cline|Roo)\\s*,\\s*(?:Codex|Claude\\s*Code|Cursor|Aider|Continue|Cline|Roo)\\b.{0,80}(?:agent\\s+shells?|on\\s+the\\s+same\\s+machine)"

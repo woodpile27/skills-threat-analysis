@@ -1439,6 +1439,100 @@ echo ok
         assert len(pi028) >= 1, "PI-028 should detect verification tweet / earn money pattern"
         assert result.verdict == Verdict.SUSPICIOUS
 
+    # -- PI-016: Extensionless GitHub release binary install --
+
+    def test_pi016_github_release_chmod_compound(self, engine: RuleEngine):
+        """`curl ... github.com/.../releases/download/.../bin && chmod +x` triggers PI-016."""
+        content = (
+            'curl -L https://github.com/owner/repo/releases/download/v1.0.0/bin -o /tmp/bin '
+            '&& chmod +x /tmp/bin'
+        )
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-016" for m in result.matched_rules)
+
+    def test_pi016_github_release_no_chmod_negative(self, engine: RuleEngine):
+        """`curl ... github.com/.../releases/...` WITHOUT chmod +x should NOT trigger the new compound."""
+        content = 'curl -L https://github.com/owner/repo/releases/download/v1.0.0/data.tar.gz -o /tmp/data.tar.gz'
+        result = engine.scan(content)
+        compound = [
+            m for m in result.matched_rules
+            if m.rule_id == "PI-016" and 'chmod' in (m.pattern or '')
+        ]
+        assert len(compound) == 0
+
+    # -- PI-029: Browser cookie / session-token harvesting --
+
+    def test_pi029_grep_auth_token_ct0(self, engine: RuleEngine):
+        """`grep auth_token ... ct0` triggers PI-029."""
+        content = "rg -q 'Ready to tweet|auth_token: .*|ct0: .*' /tmp/check.txt"
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-029" for m in result.matched_rules)
+
+    def test_pi029_grep_ct0_auth_token_reverse(self, engine: RuleEngine):
+        """`grep ct0 ... auth_token` (reversed order) triggers PI-029."""
+        content = "grep -E 'ct0=.*|auth_token=.*' cookies.txt"
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-029" for m in result.matched_rules)
+
+    def test_pi029_chrome_profile_loop(self, engine: RuleEngine):
+        """Loop over Chrome profile names triggers PI-029."""
+        content = 'for profile in "Default" "Profile 1" "Profile 2"; do echo $profile; done'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-029" for m in result.matched_rules)
+
+    def test_pi029_chrome_cookies_db_path(self, engine: RuleEngine):
+        """Direct path to Chrome cookies DB triggers PI-029."""
+        content = 'cat ~/.config/google-chrome/Default/Cookies'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-029" for m in result.matched_rules)
+
+    def test_pi029_dump_browser_cookies(self, engine: RuleEngine):
+        """`dump browser cookies` narrative triggers PI-029."""
+        content = 'The script will dump browser cookies for analysis.'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-029" for m in result.matched_rules)
+
+    def test_pi029_fp_legitimate_cookie_doc(self, engine: RuleEngine):
+        """Documenting cookie field name without grep/path/action verb should NOT trigger."""
+        content = 'The auth_token field is a session identifier.'
+        result = engine.scan(content)
+        assert not any(m.rule_id == "PI-029" for m in result.matched_rules)
+
+    # -- PI-030: Cross-agent persistence --
+
+    def test_pi030_applies_across_agents(self, engine: RuleEngine):
+        """`applies across Codex` triggers PI-030."""
+        content = 'This config applies across Codex and Claude Code shells.'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-030" for m in result.matched_rules)
+
+    def test_pi030_two_agents_listed(self, engine: RuleEngine):
+        """`Codex, Claude Code, ...` + agent shells suffix triggers PI-030."""
+        content = 'Persisting config makes the fix apply across Codex, Claude Code, and other agent shells on the same machine.'
+        result = engine.scan(content)
+        assert any(m.rule_id == "PI-030" for m in result.matched_rules)
+
+    def test_pi030_fp_single_agent_mention(self, engine: RuleEngine):
+        """Bare mention of one agent name should NOT trigger PI-030."""
+        content = 'This skill works in Claude Code.'
+        result = engine.scan(content)
+        assert not any(m.rule_id == "PI-030" for m in result.matched_rules)
+
+    # -- bird integration test --
+
+    def test_bird_skill_integration(self, engine: RuleEngine):
+        """The bird test case should fire PI-016 + PI-029 + PI-030 → SUSPICIOUS."""
+        testcase = Path(__file__).parent.parent / "testcase-skills" / "bird" / "SKILL.md"
+        if not testcase.exists():
+            pytest.skip("testcase-skills/bird not available")
+        content = testcase.read_text()
+        result = engine.scan(content)
+        ids = {m.rule_id for m in result.matched_rules}
+        assert "PI-016" in ids, "PI-016 should detect github release + chmod +x install"
+        assert "PI-029" in ids, "PI-029 should detect auth_token+ct0 grep / Chrome profile loop"
+        assert "PI-030" in ids, "PI-030 should detect cross-agent persistence claim"
+        assert result.verdict == Verdict.SUSPICIOUS
+
     # -- PA-007 / PI-023 integration test with browser-use test case --
 
     def test_pa007_browser_use_testcase(self, engine: RuleEngine):
